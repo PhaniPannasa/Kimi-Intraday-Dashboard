@@ -51,3 +51,38 @@ def detect_macd_divergence(df: pd.DataFrame, direction: str = "long") -> bool:
 class L3Signals:
     def compute(self, df: pd.DataFrame) -> pd.DataFrame:
         return compute_indicators(df)
+
+
+def classify_oi(price_change_pct: float, oi_change_pct: float) -> str:
+    if price_change_pct > 0.5 and oi_change_pct > 2:
+        return "Long Buildup"
+    elif price_change_pct < -0.5 and oi_change_pct > 2:
+        return "Short Buildup"
+    elif price_change_pct < -0.5 and oi_change_pct < -2:
+        return "Long Unwinding"
+    elif price_change_pct > 0.5 and oi_change_pct < -2:
+        return "Short Covering"
+    return "Neutral"
+
+
+def compute_volume_zscore(current_vol: float, avg_vol: float, std_vol: float) -> float:
+    if std_vol == 0:
+        return 0
+    return (current_vol - avg_vol) / std_vol
+
+
+def compute_vwap(df) -> pd.Series:
+    typical = (df["high"] + df["low"] + df["close"]) / 3
+    cumulative_tp_vol = (typical * df["volume"]).cumsum()
+    cumulative_vol = df["volume"].cumsum()
+    return cumulative_tp_vol / cumulative_vol
+
+
+def compute_pcr_zscore(pcr: float, pcr_history: list) -> float:
+    if not pcr_history:
+        return 0
+    mean = np.mean(pcr_history)
+    std = np.std(pcr_history)
+    if std == 0:
+        return 0
+    return (pcr - mean) / std
