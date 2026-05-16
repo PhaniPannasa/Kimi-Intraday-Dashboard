@@ -52,6 +52,7 @@ class ThesisCard(BaseModel):
     gross_rr: float = 0.0
     net_rr: float = 0.0
     grade: str = "UNATTRACTIVE"
+    confluence_score: int = Field(0, ge=0, le=6)
     time_decay_multiplier: float = 1.0
     actionability_tier: ActionabilityTier = ActionabilityTier.RESEARCH_ONLY
     valid_until: datetime = datetime.utcnow()
