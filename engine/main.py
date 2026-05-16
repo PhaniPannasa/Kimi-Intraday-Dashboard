@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from config import settings
 from api.rest_routes import router as rest_router
+from api.websocket_manager import router as ws_router
 
 
 @asynccontextmanager
@@ -23,6 +24,7 @@ app.add_middleware(
 )
 
 app.include_router(rest_router)
+app.include_router(ws_router)
 
 if __name__ == "__main__":
     import uvicorn
