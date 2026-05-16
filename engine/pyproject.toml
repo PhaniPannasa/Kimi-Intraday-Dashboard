@@ -33,7 +33,7 @@ test = [
 asyncio_default_fixture_loop_scope = "function"
 
 [tool.setuptools.packages.find]
-include = ["api", "models", "db", "api.*", "models.*", "db.*"]
+include = ["api", "models", "db", "core", "core.data", "api.*", "models.*", "db.*", "core.*"]
 
 [build-system]
 requires = ["setuptools>=61.0"]
