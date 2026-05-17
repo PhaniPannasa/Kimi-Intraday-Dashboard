@@ -535,44 +535,52 @@ class PipelineOrchestrator:
             })
 
         # 8. Write factor breakdowns and pipeline status to Redis
-        for scored_entry in scored:
-            factors = scored_entry.get("factors", {})
-            await self._write_factors_to_redis(
-                symbol=scored_entry["symbol"],
-                direction=Direction.LONG,
-                l5=L5ScoreBreakdown(
-                    total=scored_entry.get("score", 0),
-                    f1_trend=factors.get("f1", 0),
-                    f2_momentum=factors.get("f2", 0),
-                    f3_volume=factors.get("f3", 0),
-                    f4_volpos=factors.get("f4", 0),
-                    f5_structure=factors.get("f5", 0),
-                    f6_sector=factors.get("f6", 0),
-                    f7_risk=factors.get("f7", 0),
-                    modifiers=scored_entry.get("modifiers", {}),
-                ),
-                l6=L6RankSnapshot(
-                    liquidity_quality=scored_entry.get("liquidity_quality", "Good"),
-                ),
-                l7=L7ConfluenceCheck(
-                    score=scored_entry.get("confluence_score", 0),
-                    max=6,
-                ),
-            )
-            break  # Only write first symbol for now to keep cycle fast
+        try:
+            long_symbols = {r.symbol for r in longs}
+            for scored_entry in scored:
+                sym = scored_entry["symbol"]
+                direction = Direction.LONG if sym in long_symbols else Direction.SHORT
+                factors = scored_entry.get("factors", {})
+                await self._write_factors_to_redis(
+                    symbol=sym,
+                    direction=direction,
+                    l5=L5ScoreBreakdown(
+                        total=scored_entry.get("score", 0),
+                        f1_trend=factors.get("f1", 0),
+                        f2_momentum=factors.get("f2", 0),
+                        f3_volume=factors.get("f3", 0),
+                        f4_volpos=factors.get("f4", 0),
+                        f5_structure=factors.get("f5", 0),
+                        f6_sector=factors.get("f6", 0),
+                        f7_risk=factors.get("f7", 0),
+                        regime=self._current_regime(),
+                        modifiers=scored_entry.get("modifiers", {}),
+                    ),
+                    l6=L6RankSnapshot(
+                        liquidity_quality=scored_entry.get("liquidity_quality", "Good"),
+                    ),
+                    l7=L7ConfluenceCheck(
+                        score=scored_entry.get("confluence_score", 0),
+                        max=6,
+                    ),
+                )
+                break  # Only write first symbol for now to keep cycle fast
 
-        await self._write_pipeline_status({
-            "l1_market_context": 45,
-            "l2_universe": 120,
-            "l3_signals": 890,
-            "l4_sector": 30,
-            "l5_scoring": 560,
-            "l6_ranking": 80,
-            "l7_confluence": 340,
-            "l8_thesis": 210,
-            "l9_monitor": 150,
-            "l10_edge": 95,
-        })
+            await self._write_pipeline_status({
+                # TODO: measure actual per-layer durations
+                "l1_market_context": 0,
+                "l2_universe": 0,
+                "l3_signals": 0,
+                "l4_sector": 0,
+                "l5_scoring": 0,
+                "l6_ranking": 0,
+                "l7_confluence": 0,
+                "l8_thesis": 0,
+                "l9_monitor": 0,
+                "l10_edge": 0,
+            })
+        except Exception:
+            pass  # Redis writes are non-critical cache augmentations
 
     # ------------------------------------------------------------------
     # Phase: closing  (force-expire + snapshot)
@@ -836,7 +844,7 @@ class PipelineOrchestrator:
             l7_confluence=kwargs.get("l7", L7ConfluenceCheck()),
             l8_thesis=kwargs.get("l8", L8ThesisSnapshot()),
         )
-        await self.cache.set(f"factors:{symbol}", breakdown.model_dump(), ex=300)
+        await self.cache.set(f"factors:{symbol}", breakdown.model_dump(mode='json'), ex=300)
 
     async def _write_pipeline_status(self, layer_timings: dict):
         """Persist pipeline-cycle status to Redis (key = ``pipeline:status``)."""
@@ -857,7 +865,7 @@ class PipelineOrchestrator:
             time_bucket=time_bucket,
             layers=layers,
         )
-        await self.cache.set("pipeline:status", status.model_dump(), ex=120)
+        await self.cache.set("pipeline:status", status.model_dump(mode='json'), ex=120)
 
     async def handle_upstox_tick(self, raw_message: str):
         """Parse an Upstox V3 WebSocket tick and route to TickBuffer.ingest().
