@@ -1,6 +1,62 @@
 from typing import Optional
+import random
 
 from models.enums import SetupType, Regime, Direction
+
+
+def wilson_ci(hit_rate: float, n: int, z: float = 1.96) -> tuple[float, float]:
+    """Wilson score interval for a binomial proportion."""
+    if n == 0:
+        return (0.0, 0.0)
+    p = hit_rate
+    denom = 1 + z**2 / n
+    centre = (p + z**2 / (2 * n)) / denom
+    half_width = z * ((p * (1 - p) / n + z**2 / (4 * n**2)) ** 0.5) / denom
+    return (max(0.0, centre - half_width), min(1.0, centre + half_width))
+
+
+def benjamini_hochberg(p_values: list[float], alpha: float = 0.05) -> list[bool]:
+    """Benjamini-Hochberg FDR correction -- standard step-up procedure.
+
+    1. Sort p-values ascending
+    2. Find largest rank k where p_(k) <= (k/m) * alpha
+    3. Reject ALL hypotheses with rank <= k
+    """
+    if not p_values:
+        return []
+    m = len(p_values)
+    sorted_idx = sorted(range(m), key=lambda i: p_values[i])
+
+    k = 0
+    for rank, idx in enumerate(sorted_idx, start=1):
+        if p_values[idx] <= rank * alpha / m:
+            k = rank
+        else:
+            break
+
+    significant = [False] * m
+    for rank, idx in enumerate(sorted_idx, start=1):
+        if rank <= k:
+            significant[idx] = True
+    return significant
+
+
+def bayesian_bootstrap(returns: list[float], n_bootstrap: int = 10000) -> dict:
+    """Bayesian bootstrap for mean net return."""
+    means = []
+    n = len(returns)
+    for _ in range(n_bootstrap):
+        weights = [random.random() for _ in range(n)]
+        total = sum(weights)
+        weights = [w / total for w in weights]
+        mean = sum(w * r for w, r in zip(weights, returns))
+        means.append(mean)
+    means.sort()
+    return {
+        "mean": sum(means) / len(means),
+        "ci_lower": means[int(0.025 * n_bootstrap)],
+        "ci_upper": means[int(0.975 * n_bootstrap)],
+    }
 
 
 def check_min_samples(n: int, threshold: int = 15) -> bool:
@@ -99,6 +155,9 @@ class L10EdgeLookup:
         hit_rate = row.get("hit_rate", 0.0)
         ci_lower = row.get("ci_lower", 0.0)
         ci_upper = row.get("ci_upper", 0.0)
+
+        if n > 0 and ci_lower == 0.0 and ci_upper == 0.0:
+            ci_lower, ci_upper = wilson_ci(hit_rate, n)
 
         is_significant = (
             check_min_samples(n)

@@ -44,3 +44,46 @@ def test_l10_populate_and_lookup():
     assert result["is_significant"] is True
     assert result["n"] == 42
     assert result["hit_rate"] == 0.62
+
+
+from layers.l10_edge import wilson_ci, benjamini_hochberg, bayesian_bootstrap
+
+
+def test_wilson_ci_basic():
+    lower, upper = wilson_ci(hit_rate=0.6, n=100)
+    assert 0 < lower < 0.6 < upper < 1.0
+
+
+def test_wilson_ci_zero_n():
+    lower, upper = wilson_ci(hit_rate=0.0, n=0)
+    assert lower == 0.0
+    assert upper == 0.0
+
+
+def test_benjamini_hochberg_basic():
+    p_values = [0.01, 0.04, 0.03, 0.08, 0.2]
+    significant = benjamini_hochberg(p_values, alpha=0.05)
+    assert significant[0] is True
+    assert significant[1] is False
+    assert significant[2] is False
+    assert significant[3] is False
+    assert significant[4] is False
+
+
+def test_benjamini_hochberg_monotonic():
+    p_values = [0.009, 0.021, 0.022, 0.023, 0.5]
+    significant = benjamini_hochberg(p_values, alpha=0.05)
+    assert significant == [True, False, False, False, False]
+
+
+def test_benjamini_hochberg_empty():
+    assert benjamini_hochberg([]) == []
+
+
+def test_bayesian_bootstrap_basic():
+    returns = [0.5, -0.2, 1.2, 0.8, -0.1]
+    result = bayesian_bootstrap(returns, n_bootstrap=1000)
+    assert "mean" in result
+    assert "ci_lower" in result
+    assert "ci_upper" in result
+    assert result["ci_lower"] < result["mean"] < result["ci_upper"]
