@@ -13,6 +13,18 @@ from models.enums import (
     SetupType,
     VIXBand,
 )
+from models.factors import (
+    L2UniverseFrame,
+    L3SignalFrame,
+    L4SectorFrame,
+    L5ScoreBreakdown,
+    L6RankSnapshot,
+    L7ConfluenceCheck,
+    L8ThesisSnapshot,
+    PipelineLayerStatus,
+    PipelineStatusResponse,
+    SymbolFactorBreakdown,
+)
 from models.frames import (
     EdgeTierStats,
     HealthResponse,
@@ -128,4 +140,76 @@ async def edge_tier_stats(tier_id: int):
         is_significant=True,
         avg_net_return=0.85,
         std_net_return=1.2,
+    )
+
+
+@router.get("/rankings/{symbol}/factors", response_model=SymbolFactorBreakdown)
+async def symbol_factors(symbol: str):
+    return SymbolFactorBreakdown(
+        symbol=symbol,
+        direction=Direction.LONG,
+        last_updated=datetime.now(timezone.utc),
+        l2_universe=L2UniverseFrame(
+            fo_eligible=True, fo_ban=False, mwpl_status="None",
+            earnings_flag="None", liquidity_quality="Excellent", lqs_score=0.87,
+        ),
+        l3_signals=L3SignalFrame(
+            ema_9=2455.2, ema_20=2430.1, ema_50=2400.5, ema_aligned=True,
+            supertrend_dir=1, adx=28.4, rsi=56.2, macd_hist=1.35,
+            atr=12.5, atr_pct=0.51, bb_width=2.1, vwap=2448.0,
+            above_vwap=True, roc_20=3.2,
+        ),
+        l4_sector=L4SectorFrame(
+            sector_id=8, sector_name="Energy", rs_ratio=1.08,
+            rs_momentum=1.02, rotation_rank=3,
+        ),
+        l5_scores=L5ScoreBreakdown(
+            total=84.5, f1_trend=85, f2_momentum=72, f3_volume=90,
+            f4_volpos=68, f5_structure=88, f6_sector=75, f7_risk=82,
+            regime="Trending-Up", modifiers={"strong_sector": 3},
+        ),
+        l6_ranking=L6RankSnapshot(
+            previous_score=78.2, score_change=6.3,
+            rank_movement="UP", liquidity_quality="Excellent",
+        ),
+        l7_confluence=L7ConfluenceCheck(
+            score=5, max=6,
+            checks={
+                "strong_close": True,
+                "volume_confirm": True,
+                "non_exhaustion": True,
+                "htf_alignment": True,
+                "risk_distance": True,
+                "reward_distance": False,
+            },
+        ),
+        l8_thesis=L8ThesisSnapshot(
+            thesis_id=f"{symbol}-ORB-20260517-0931",
+            setup_type=1, trigger=2450.5, invalidation=2420.0,
+            t1=2495.0, t2=2530.0, gross_rr=1.5, net_rr=1.35,
+            grade="ATTRACTIVE", actionability_tier="Tradeable",
+        ),
+    )
+
+
+@router.get("/pipeline/status", response_model=PipelineStatusResponse)
+async def pipeline_status():
+    now = datetime.now(timezone.utc)
+    return PipelineStatusResponse(
+        last_cycle_at=now,
+        cycle_duration_ms=4200,
+        market_session="Open",
+        time_bucket="Trend Establishment",
+        layers={
+            "l1_market_context": PipelineLayerStatus(status="ok", last_run=now, duration_ms=45),
+            "l2_universe": PipelineLayerStatus(status="ok", last_run=now, duration_ms=120),
+            "l3_signals": PipelineLayerStatus(status="ok", last_run=now, duration_ms=890),
+            "l4_sector": PipelineLayerStatus(status="ok", last_run=now, duration_ms=30),
+            "l5_scoring": PipelineLayerStatus(status="ok", last_run=now, duration_ms=560),
+            "l6_ranking": PipelineLayerStatus(status="ok", last_run=now, duration_ms=80),
+            "l7_confluence": PipelineLayerStatus(status="ok", last_run=now, duration_ms=340),
+            "l8_thesis": PipelineLayerStatus(status="ok", last_run=now, duration_ms=210),
+            "l9_monitor": PipelineLayerStatus(status="ok", last_run=now, duration_ms=150),
+            "l10_edge": PipelineLayerStatus(status="ok", last_run=now, duration_ms=95),
+        },
     )
