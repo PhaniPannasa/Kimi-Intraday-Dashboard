@@ -6,11 +6,24 @@ from api.rest_routes import router as rest_router
 from api.websocket_manager import router as ws_router
 from core.scheduler.market_scheduler import scheduler
 from core.pipeline import pipeline
+from core.data.upstox_ws import upstox_ws
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("Engine starting...")
+
+    # Wire Upstox WebSocket ticks into the pipeline TickBuffer
+    upstox_ws.on_tick = pipeline.handle_upstox_tick
+
+    # Connect and subscribe to all symbols in Full mode
+    try:
+        await upstox_ws.connect()
+        all_keys = list(pipeline.symbol_map.values())
+        await upstox_ws.subscribe(all_keys, mode="full")
+        print(f"Upstox WS connected, subscribed to {len(all_keys)} symbols")
+    except Exception as e:
+        print(f"Upstox WS connection deferred: {e}")
 
     scheduler.register_job(
         "pipeline_cycle",
@@ -24,6 +37,7 @@ async def lifespan(app: FastAPI):
     yield
 
     print("Engine shutting down...")
+    await upstox_ws.close()
     scheduler.shutdown()
 
 

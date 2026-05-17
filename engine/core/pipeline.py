@@ -6,6 +6,7 @@ PipelineOrchestrator  Drives L1-L10 layers with real bar data, market-session
                       awareness, cold-start backfill, and closing snapshots.
 """
 
+import asyncio
 import json
 import random
 from collections import defaultdict
@@ -287,6 +288,9 @@ class PipelineOrchestrator:
         self.l9 = L9ShadowLedger()
         self.l10 = L10EdgeLookup()
 
+        # Idempotency guard: pre-market backfill runs once
+        self._pre_market_done: bool = False
+
         # Cached state (read by health / API routes)
         self.latest_context: Optional[MarketContextFrame] = None
         self.latest_long_rankings: list = []
@@ -300,7 +304,7 @@ class PipelineOrchestrator:
     async def run_cycle(self):
         """Dispatch to the appropriate phase handler."""
         phase = self.session.current_phase()
-        if phase == "pre-market":
+        if phase == "pre-market" and not self._pre_market_done:
             await self._run_pre_market_cycle()
         elif phase == "live":
             await self._run_live_cycle()
@@ -312,17 +316,30 @@ class PipelineOrchestrator:
     # ------------------------------------------------------------------
 
     async def _run_pre_market_cycle(self):
-        """Fetch yesterday's 1-min bars for every symbol and pre-load."""
-        for sym, inst_key in self.symbol_map.items():
-            try:
-                resp = await self.upstox_rest.get_historical_candle(
-                    inst_key, "1minute",
-                )
-                df = self._candle_json_to_df(resp)
-                if len(df) > 0:
-                    self.aggregator.pre_load(sym, df)
-            except Exception:
-                continue  # Gracefully skip unreachable symbols
+        """Fetch yesterday's 1-min bars for every symbol and pre-load.
+
+        Uses asyncio.gather with a semaphore to limit concurrent REST calls.
+        Sets ``_pre_market_done`` so subsequent cycles skip the backfill.
+        """
+        sem = asyncio.Semaphore(5)
+
+        async def _fetch_one(sym: str, inst_key: str):
+            async with sem:
+                try:
+                    resp = await self.upstox_rest.get_historical_candle(
+                        inst_key, "1minute",
+                    )
+                    df = self._candle_json_to_df(resp)
+                    if len(df) > 0:
+                        self.aggregator.pre_load(sym, df)
+                except Exception:
+                    pass  # Gracefully skip unreachable symbols
+
+        await asyncio.gather(
+            *[_fetch_one(sym, key) for sym, key in self.symbol_map.items()],
+            return_exceptions=True,
+        )
+        self._pre_market_done = True
 
     # ------------------------------------------------------------------
     # Phase: live  (full compute pipeline)
@@ -402,10 +419,14 @@ class PipelineOrchestrator:
         # 5. L8: assemble theses for top 5
         theses: list[ThesisCard] = []
         for rank_entry in rankings[:5]:
-            orb_high = rank_entry.score * random.uniform(0.99, 1.01)
-            orb_low = rank_entry.score * random.uniform(0.94, 0.98)
-            vwap_val = (orb_high + orb_low) / 2
-            pdh = orb_high * 1.02
+            bars_for_thesis = self.aggregator.get_bars(rank_entry.symbol, 20)
+            if len(bars_for_thesis) < 2:
+                continue
+            recent = bars_for_thesis.tail(5)
+            orb_high = float(recent["high"].max())
+            orb_low = float(recent["low"].min())
+            vwap_val = float(bars_for_thesis.tail(1)["close"][0])
+            pdh = orb_high * 1.01
             direction = "LONG" if rank_entry.net_rr > 0 else "SHORT"
 
             thesis = self.l8.assemble(
@@ -750,6 +771,37 @@ class PipelineOrchestrator:
         cum_vol = bars["volume"].cum_sum()
         vwap = cum_tp_vol / cum_vol
         return bars.with_columns(vwap.alias("vwap"))
+
+    async def handle_upstox_tick(self, raw_message: str):
+        """Parse an Upstox V3 WebSocket tick and route to TickBuffer.ingest().
+
+        Expected message format (Full mode):
+          {"type": "full", "data": {"instrument_key": "...", "ltp": ...,
+           "volume": ..., "oi": ..., "timestamp": "..."}}
+        """
+        try:
+            msg = json.loads(raw_message)
+        except (json.JSONDecodeError, TypeError):
+            return
+
+        data = msg.get("data", msg)
+        if not isinstance(data, dict):
+            return
+
+        instrument_key = data.get("instrument_key")
+        ltp = data.get("ltp") or data.get("last_price")
+        if instrument_key is None or ltp is None:
+            return
+
+        volume = int(data.get("volume", 0) or 0)
+        oi = int(data.get("oi", 0) or 0)
+        ts_str = data.get("timestamp") or data.get("exchange_timestamp")
+        if ts_str:
+            ts = datetime.fromisoformat(str(ts_str).replace("Z", "+00:00"))
+        else:
+            ts = datetime.now(timezone.utc)
+
+        self.aggregator.ingest_tick(instrument_key, float(ltp), volume, oi, ts)
 
 
 # Module-level singleton
