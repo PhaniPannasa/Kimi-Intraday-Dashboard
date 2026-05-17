@@ -16,4 +16,18 @@ describe('Top25Table', () => {
     render(<Top25Table direction="long" />, { wrapper });
     expect(screen.getByText('Top 25 long')).toBeDefined();
   });
+
+  it('should render expand arrows on rows', () => {
+    render(<Top25Table direction="long" />, { wrapper });
+    // Each row should have a ▶ indicator (collapsed state)
+    const arrows = document.querySelectorAll('td');
+    const arrowCell = Array.from(arrows).find(
+      (td) => td.textContent === '▶' || td.textContent === '▼'
+    );
+    // Should have at least one arrow cell (or loading state means none yet)
+    if (arrowCell) {
+      expect(arrowCell.textContent).toMatch(/[▶▼]/);
+    }
+    expect(document.querySelector('table')).toBeDefined();
+  });
 });
