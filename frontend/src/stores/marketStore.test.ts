@@ -57,4 +57,39 @@ describe('marketStore', () => {
     useMarketStore.getState().setSelectedThesis(thesis);
     expect(useMarketStore.getState().selectedThesis).toEqual(thesis);
   });
+
+  it('should add or update a thesis', () => {
+    useMarketStore.setState({ theses: [] });
+    const store = useMarketStore.getState();
+    store.addOrUpdateThesis({
+      thesis_id: 't1', symbol: 'RELIANCE', direction: 'LONG', setup_type: 1,
+      trigger: 2500, invalidation: 2450, t1: 2550, t2: 2600,
+      gross_rr: 2.0, net_rr: 1.8, grade: 'ATTRACTIVE',
+      time_decay_multiplier: 1.0, actionability_tier: 'Tradeable',
+      valid_until: '2026-05-17T10:00:00Z', preferred_regime: 'Trending-Up',
+    });
+    expect(useMarketStore.getState().theses).toHaveLength(1);
+  });
+
+  it('should invalidate a thesis', () => {
+    useMarketStore.setState({ theses: [], invalidatedTheses: [] });
+    const store = useMarketStore.getState();
+    store.addOrUpdateThesis({
+      thesis_id: 't2', symbol: 'INFY', direction: 'SHORT', setup_type: 1,
+      trigger: 1500, invalidation: 1550, t1: 1450, t2: 1400,
+      gross_rr: 1.5, net_rr: 1.3, grade: 'MARGINAL',
+      time_decay_multiplier: 0.9, actionability_tier: 'Constrained',
+      valid_until: '2026-05-17T10:00:00Z', preferred_regime: 'Trending-Down',
+    });
+    store.invalidateThesis('t2', 'Stop loss hit');
+    expect(useMarketStore.getState().invalidatedTheses).toContainEqual(
+      expect.objectContaining({ thesis_id: 't2', reason: 'Stop loss hit' })
+    );
+  });
+
+  it('should update edge tier', () => {
+    const store = useMarketStore.getState();
+    store.updateEdgeTier(1, 'PROMOTED');
+    expect(useMarketStore.getState().edgeTiers[1]).toBe('PROMOTED');
+  });
 });
