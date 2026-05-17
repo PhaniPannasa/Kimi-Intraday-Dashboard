@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List
 
 from models.enums import (
@@ -55,7 +55,7 @@ class ThesisCard(BaseModel):
     confluence_score: int = Field(0, ge=0, le=6)
     time_decay_multiplier: float = 1.0
     actionability_tier: ActionabilityTier = ActionabilityTier.RESEARCH_ONLY
-    valid_until: datetime = datetime.utcnow()
+    valid_until: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     preferred_regime: Regime = Regime.TRENDING_UP
 
 

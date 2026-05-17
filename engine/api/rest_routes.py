@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter
@@ -30,7 +30,7 @@ async def health():
     return HealthResponse(
         status="healthy",
         websocket="connected",
-        last_bar_processed=datetime.utcnow(),
+        last_bar_processed=datetime.now(timezone.utc),
         top25_long_count=25,
         top25_short_count=25,
         active_theses=4,
