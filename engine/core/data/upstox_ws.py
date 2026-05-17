@@ -13,6 +13,7 @@ class UpstoxWSClient:
         self.headers = {"Authorization": f"Bearer {settings.upstox_analytics_token}"}
         self.subscribed = set()
         self.running = False
+        self.on_tick = None  # async callback (message) -> None
 
     async def connect(self):
         self.ws = await websockets.connect(self.url, extra_headers=self.headers)
@@ -43,6 +44,8 @@ class UpstoxWSClient:
 
     async def listen(self):
         async for message in self.ws:
+            if self.on_tick:
+                await self.on_tick(message)
             yield message
 
     async def close(self):
