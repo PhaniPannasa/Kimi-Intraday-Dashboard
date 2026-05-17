@@ -3,6 +3,7 @@ import { useRankings } from '@/hooks/useRankings';
 import { RankingRowExpanded } from './RankingRowExpanded';
 import { useMarketStore } from '@/stores/marketStore';
 import { cn } from '@/lib/utils';
+import { DataAgeBadge } from './DataAgeBadge';
 import type { RankingEntry } from '@/types/api';
 import { setupTypeLabels } from '@/types/api';
 
@@ -109,6 +110,7 @@ export function Top25Table({ direction }: { direction: 'long' | 'short' }) {
   const { data, isLoading } = useRankings(direction);
   const theses = useMarketStore((s) => s.theses);
   const setSelectedThesis = useMarketStore((s) => s.setSelectedThesis);
+  const rankingTs = useMarketStore((s) => s.lastWSTimestamps['L6_RANKINGS']);
   const [expandedSymbol, setExpandedSymbol] = useState<string | null>(null);
 
   const toggleExpand = (symbol: string) => {
@@ -153,6 +155,7 @@ export function Top25Table({ direction }: { direction: 'long' | 'short' }) {
         <span className="ml-auto text-fluid-xs text-[var(--text-tertiary)]">
           {entries.length} rows
         </span>
+        <DataAgeBadge timestamp={rankingTs} />
       </div>
 
       {isLoading ? (

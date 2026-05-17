@@ -16,6 +16,7 @@ interface MarketState {
   theses: ThesisCard[];
   invalidatedTheses: InvalidatedThesis[];
   edgeTiers: Record<number, string>;
+  lastWSTimestamps: Record<string, string>;
   setContext: (ctx: MarketContextFrame) => void;
   setRankings: (long: RankingEntry[], short: RankingEntry[]) => void;
   setSelectedThesis: (thesis: ThesisCard | null) => void;
@@ -23,6 +24,7 @@ interface MarketState {
   addOrUpdateThesis: (thesis: ThesisCard) => void;
   invalidateThesis: (thesisId: string, reason: string) => void;
   updateEdgeTier: (tier: number, promotion: string) => void;
+  setWSTimestamp: (channel: string, ts: string) => void;
 }
 
 export const useMarketStore = create<MarketState>((set) => ({
@@ -34,6 +36,7 @@ export const useMarketStore = create<MarketState>((set) => ({
   theses: [],
   invalidatedTheses: [],
   edgeTiers: {},
+  lastWSTimestamps: {},
   setContext: (ctx) => set({ context: ctx }),
   setRankings: (long, short) => set({ longRankings: long, shortRankings: short }),
   setSelectedThesis: (thesis) => set({ selectedThesis: thesis }),
@@ -54,5 +57,9 @@ export const useMarketStore = create<MarketState>((set) => ({
   updateEdgeTier: (tier, promotion) =>
     set((state) => ({
       edgeTiers: { ...state.edgeTiers, [tier]: promotion },
+    })),
+  setWSTimestamp: (channel, ts) =>
+    set((state) => ({
+      lastWSTimestamps: { ...state.lastWSTimestamps, [channel]: ts },
     })),
 }));
