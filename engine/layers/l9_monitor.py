@@ -26,7 +26,7 @@ class L9ShadowLedger:
             entry = t.get("entry_price") or t["trigger"]
             raw_pct = (price - entry) / entry * 100
 
-            # Flip sign for SHORT: favorable moves (price down) become positive
+            # MFE/MAE: flip sign for SHORT so favorable moves are positive
             if t["direction"] == "SHORT":
                 raw_pct = -raw_pct
 
