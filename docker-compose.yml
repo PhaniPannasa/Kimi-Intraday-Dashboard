@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  engine:
+    build:
+      context: ./engine
+      dockerfile: Dockerfile
+    container_name: intraday-engine
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8084:8000"
+    volumes:
+      - engine_data:/data
+      - ./logs:/app/logs
+      - ./engine:/app
+    depends_on:
+      - timescaledb
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  timescaledb:
+    image: timescale/timescaledb:latest-pg15
+    container_name: intraday-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: engine
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: intraday
+    volumes:
+      - tsdb_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+
+  redis:
+    image: redis:7-alpine
+    container_name: intraday-cache
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6380:6379"
+
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: intraday-web
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    depends_on:
+      - engine
+
+volumes:
+  engine_data:
+  tsdb_data:
+  redis_data:
