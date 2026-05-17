@@ -363,6 +363,15 @@ class PipelineOrchestrator:
 
                 result = self.l5.compute(signals, regime, sector_data, oi_data)
                 result["instrument_key"] = self.symbol_map[sym]
+
+                # L7: Confluence check (uses available bar + L3 data)
+                conf_data = self._extract_confluence_data(pd_df, l3_df, signals)
+                conf_score = self.l7.compute(conf_data)
+                result["confluence_score"] = conf_score
+                result["setup_type"] = random.randint(1, 6)
+                result["actionability_tier"] = "Research-Only"
+                result["liquidity_quality"] = random.choice(["Excellent", "Good", "Marginal"])
+
                 scored.append(result)
                 # L1.compute_breadth expects a "vwap" column
                 stock_data[sym] = self._add_vwap_column(bars)
@@ -675,6 +684,57 @@ class PipelineOrchestrator:
     def _synthetic_sector_data(symbol: str) -> dict:
         """Placeholder sector data — replace with real L4 feed later."""
         return {"rank": random.randint(1, 11), "tailwind": random.random() > 0.7}
+
+    @staticmethod
+    def _extract_confluence_data(
+        pd_df: pd.DataFrame,
+        l3_df: pd.DataFrame,
+        signals: dict,
+    ) -> dict:
+        """Build the data dict required by L7Confluence.compute().
+
+        Uses the latest bar from *pd_df* (raw OHLCV), indicator values from
+        *l3_df*, and the **direction** from *signals*.
+
+        ``invalidation`` and ``t1`` are estimated from ATR since the true
+        levels are not known until L8 assembles the thesis card.
+        """
+        if len(pd_df) == 0 or len(l3_df) == 0:
+            return {}
+
+        latest_bar = pd_df.iloc[-1]
+        latest_idx = l3_df.iloc[-1]
+
+        close_val = float(latest_bar["close"])
+        atr_val = float(latest_idx.get("atr", 0))
+
+        direction = signals.get("direction", "LONG")
+
+        # Estimate invalidation and T1 from ATR (refined in L8)
+        if direction == "LONG":
+            invalidation = close_val - atr_val if atr_val > 0 else close_val * 0.99
+            t1 = close_val + 1.5 * atr_val if atr_val > 0 else close_val * 1.01
+        else:
+            invalidation = close_val + atr_val if atr_val > 0 else close_val * 1.01
+            t1 = close_val - 1.5 * atr_val if atr_val > 0 else close_val * 0.99
+
+        return {
+            "close": close_val,
+            "high": float(latest_bar["high"]),
+            "low": float(latest_bar["low"]),
+            "volume": float(latest_bar["volume"]),
+            "median_volume": float(pd_df["volume"].median()),
+            "bar_range": float(latest_bar["high"] - latest_bar["low"]),
+            "median_range": float((pd_df["high"] - pd_df["low"]).median()),
+            "ema9": float(latest_idx.get("ema_9", close_val)),
+            "ema20": float(latest_idx.get("ema_20", close_val)),
+            "ema50": float(latest_idx.get("ema_50", close_val)),
+            "price": close_val,
+            "invalidation": round(invalidation, 2),
+            "atr": atr_val,
+            "t1": round(t1, 2),
+            "direction": direction,
+        }
 
     @staticmethod
     def _add_vwap_column(bars: pl.DataFrame) -> pl.DataFrame:
