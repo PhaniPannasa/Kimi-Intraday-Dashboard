@@ -4,57 +4,71 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Where the code actually lives
 
-The root of this repo is intentionally near-empty: it only tracks design docs
-(`system_design_final.md`, `Intraday_Engine_Algorithm_v1_2.pdf`,
-`docs/superpowers/`). **All application code lives in `.worktrees/mvp1/`**,
-which is `.gitignore`d at the root and is itself a separate git worktree.
-
-When asked to find, build, run, or test code, `cd .worktrees/mvp1/` first.
+**All application code lives at the repository ROOT** (not in a worktree).
 
 ```
-.worktrees/mvp1/
-├── docker-compose.yml         # 4-service stack
-├── .env.example               # required env vars
+.
 ├── engine/                    # FastAPI backend (Python 3.11)
-│   ├── main.py                # ASGI entrypoint
+│   ├── main.py                # ASGI entrypoint with lifespan management
 │   ├── config.py              # pydantic-settings
 │   ├── pyproject.toml         # deps + setuptools config
-│   ├── api/                   # rest_routes.py, websocket_manager.py
-│   ├── core/                  # data/ (upstox_rest, upstox_ws, nse_scraper, redis_cache),
-│   │                          # scheduler/ (market_scheduler, holidays), alerts/ (telegram)
+│   ├── api/                   # rest_routes.py (REST endpoints), websocket_manager.py
+│   ├── core/                  # pipeline orchestration
+│   │   ├── pipeline.py        # TickBuffer, BarAggregator, PipelineOrchestrator (L1-L10)
+│   │   ├── data/              # upstox_rest.py, upstox_ws.py, nse_scraper.py, redis_cache.py
+│   │   ├── scheduler/         # market_scheduler.py, holidays.py
+│   │   ├── session/           # market_session.py (09:15-15:30 IST awareness)
+│   │   ├── alerts/            # telegram.py
+│   │   └── auth/              # token_manager.py
 │   ├── layers/                # l1_market_context … l10_edge (one file per L-layer)
-│   ├── models/                # enums.py, frames.py (Pydantic v2)
+│   ├── models/                # enums.py, frames.py, factors.py (Pydantic v2)
 │   └── db/                    # timescale.py + migrations/*.sql
 ├── frontend/                  # React 18 + Vite + TS PWA
-│   └── src/{App.tsx, components/, hooks/, stores/, types/, lib/}
-└── tests/                     # pytest, mirrors L1–L10 + integration + e2e/
+│   ├── src/
+│   │   ├── components/        # RegimeBanner, Top25Table, ThesisCard, ActiveMonitor, EdgePanel, etc.
+│   │   ├── hooks/             # useWebSocket, useRankings, useMarketContext, etc.
+│   │   ├── stores/            # marketStore.ts (Zustand)
+│   │   ├── types/             # API contract types
+│   │   └── App.tsx
+│   ├── vite.config.ts         # Vite build config with /api proxy
+│   └── package.json           # dependencies
+├── tests/                     # pytest integration + unit + e2e tests
+│   ├── test_l1.py … test_l10.py
+│   ├── test_pipeline.py       # L1-L10 orchestration test
+│   ├── test_pipeline_status.py
+│   ├── test_factors_api.py
+│   └── e2e/                   # smoke tests
+├── docker-compose.yml         # 4-service stack (engine, timescaledb, redis, caddy)
+├── .env.example               # template for env vars
+└── pytest.ini, pyproject.toml # test + build config
 ```
 
 ## Common commands
 
-All commands assume cwd `.worktrees/mvp1/`.
+Run commands from the **project ROOT** (not a subdirectory).
 
 ### Backend (FastAPI engine)
 
 ```powershell
 # Install deps (editable, with test extras)
-pip install -e "engine[.test]"
+pip install -e "./engine[.test]"
 
 # Run dev server (auto-reload on :8000 inside, :8084 outside Docker)
-cd engine; uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+cd engine && uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
-# All tests
+# All tests (pytest.ini at root auto-discovers tests/)
 pytest
 
 # Single test file or test
 pytest tests/test_l5.py
 pytest tests/test_l5.py::test_score_clamping
+pytest tests/test_pipeline.py
 
 # E2E smoke (hits the live ASGI app via httpx)
 pytest tests/e2e/
 ```
 
-`pytest.ini` sets `asyncio_mode = auto` — do NOT add `@pytest.mark.asyncio`;
+**Note:** `pytest.ini` sets `asyncio_mode = auto` — do NOT add `@pytest.mark.asyncio`;
 `async def test_*` is picked up automatically. `tests/conftest.py` inserts
 `engine/` into `sys.path` so `from main import app` works without packaging.
 
@@ -71,10 +85,21 @@ npm test           # vitest (jsdom, setup in src/test-setup.ts)
 ### Full stack via Docker Compose
 
 ```powershell
-docker compose up -d           # engine + timescaledb + redis + web
+# Ensure .env exists at project root with Upstox credentials
+cp .env.example .env
+# Edit .env with real UPSTOX_ANALYTICS_TOKEN, DB_PASSWORD, etc.
+
+# Start all services
+docker compose up -d
+
+# Watch engine logs
 docker compose logs -f engine
+
+# Stop services
 docker compose down
 ```
+
+**Note:** `.env` is required for Upstox API access; see `.env.example` for template.
 
 ## Port mapping (non-obvious — host ports differ from container ports)
 
@@ -156,6 +181,43 @@ against the real contracts.
 - **Native WebSocket** in `hooks/useWebSocket.ts` writes to the Zustand store
 - **PWA** via `vite-plugin-pwa` (autoUpdate, no custom manifest yet)
 
+## Verifying the system is working
+
+### Quick health check
+```powershell
+# Check backend health
+curl http://localhost:8084/health
+
+# Check frontend builds
+cd frontend && npm run build
+
+# Run tests
+pytest tests/test_l1.py tests/test_l6.py tests/test_l8.py tests/test_l10.py
+
+# Run integration test
+pytest tests/test_pipeline.py -v
+```
+
+### Start the full stack
+```powershell
+# Terminal 1: Backend (requires .env with Upstox token)
+cd engine
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+# Terminal 2: Frontend
+cd frontend
+npm run dev
+
+# Terminal 3 (optional): Docker services
+docker compose up -d
+```
+
+Then open http://localhost:5174 in a browser. You should see:
+- RegimeBanner with current market regime
+- Top 25 long/short tables with scores and factors
+- Pipeline status showing L1-L10 stages
+- Real-time updates via WebSocket
+
 ## Authoritative design documents
 
 When in doubt about algorithm details, behavior, or rationale, consult these
@@ -165,12 +227,66 @@ in order:
    algorithm specifics, cost model, expiry rules, edge statistics math).
 2. `docs/superpowers/specs/2026-05-16-intraday-dashboard-mvp1-design.md` —
    MVP 1 scope, API contract, DB schema, Redis keys, port assignments.
-3. `docs/superpowers/plans/2026-05-16-intraday-dashboard-mvp1.md` —
-   task-by-task implementation plan (the script the MVP was built from).
+3. `docs/superpowers/plans/2026-05-17-mvp1-complete-closure-v2.md` —
+   latest implementation completion checklist.
 4. `Intraday_Engine_Algorithm_v1_2.pdf` — the underlying algorithm spec.
 
 Do not re-derive algorithm details by reading layer code alone; the design docs
 encode constants, thresholds, and the "why" that the code does not.
+
+## MVP 1 Completion Status (as of 2026-05-17)
+
+### ✅ Fully Implemented
+
+**Backend (Engine)**
+- ✅ All 10 layers (L1-L10) implemented with real algorithms
+- ✅ Pipeline orchestration: TickBuffer, BarAggregator, PipelineOrchestrator
+- ✅ FastAPI main.py with lifespan management (scheduler startup/shutdown)
+- ✅ REST routes: `/health`, `/market/context`, `/rankings/top25/{long|short}`, `/thesis/{id}`, `/edge/tiers`, `/pipeline/status`
+- ✅ WebSocket manager with L1/L6/L8/L9/L10 broadcast channels
+- ✅ Upstox REST and WebSocket client (2 connections: Full + LTPC modes)
+- ✅ NSE scraper (F&O ban list, MWPL, earnings)
+- ✅ Redis cache layer (market context, top25 sets, active theses, L10 tiers)
+- ✅ TimescaleDB migrations and schema
+- ✅ Market session awareness (09:15-15:30 IST, NSE holidays)
+- ✅ Telegram alerts integration
+- ✅ Token manager (OAuth tracking)
+
+**Frontend (React)**
+- ✅ Vite build with TypeScript strict mode
+- ✅ Core components: RegimeBanner, Top25Table, ThesisCard, ActiveMonitor, EdgePanel
+- ✅ Advanced components: FactorGrid, RankingRowExpanded, ScoreBreakdown, ConfluenceChecklist, DataAgeBadge, PipelineStatusBar, ChartPanel
+- ✅ Hooks: useWebSocket, useRankings, useMarketContext, useDataAge, usePipelineStatus, useFactorBreakdown
+- ✅ Zustand store (marketStore) with full L1-L10 state
+- ✅ TanStack Query for REST caching
+- ✅ Tailwind CSS styling
+- ✅ PWA setup (offline cache, installable)
+- ✅ Comprehensive component tests (Vitest + jsdom)
+
+**Testing**
+- ✅ Unit tests for L1-L10 layers
+- ✅ Integration tests: pipeline orchestration, WebSocket broadcasts
+- ✅ Factor breakdown API tests
+- ✅ Pipeline status endpoint tests
+- ✅ E2E smoke tests
+- ✅ No Python deprecation warnings (fixed `datetime.utcnow()`)
+
+**Docker & DevOps**
+- ✅ docker-compose.yml with 4 services (engine, timescaledb, redis, caddy)
+- ✅ Port mappings: 8084 (engine), 5433 (DB), 6380 (redis), 5174 (Vite dev)
+- ✅ .env.example template with required credentials
+
+### ⚠️ Phase 1 Constraints (Honored)
+- ✅ **No live order execution** — L9 is shadow ledger only
+- ✅ **All 100 Nifty constituents scored** every minute (no premature filtering)
+- ✅ **Net R:R includes full Indian costs** (STT, GST, brokerage, slippage)
+
+### 📋 Known Limitations (Phase 2+)
+- No OAuth token refresh (Analytics Token valid 1 year)
+- No paper trading simulation
+- No OpenAlgo integration
+- WebSocket reconnect: fixed backoff (not adaptive)
+- No push notifications (Web Push API)
 
 ## Phase 1 invariants (do not violate)
 
@@ -183,10 +299,23 @@ encode constants, thresholds, and the "why" that the code does not.
   GST, brokerage, and depth-derived slippage — see `l8_thesis.py` and the
   cost-model section of `system_design_final.md`.
 
-## Worktree workflow
+## Development branch workflow
 
-This project uses git worktrees for isolated development. `.worktrees/mvp1/`
-is one such worktree (its own `.git` file points back to the main repo). When
-creating a new development branch, prefer adding a new worktree under
-`.worktrees/<branch-name>/` over mutating `.worktrees/mvp1/`. The
-`superpowers:using-git-worktrees` skill covers the setup.
+When working on a new feature or bugfix:
+
+1. **Option A: Direct branch** (simpler, for small changes)
+   ```powershell
+   git checkout -b feat/my-feature
+   # Make changes, test, commit
+   git push
+   ```
+
+2. **Option B: Worktree isolation** (recommended for large refactors)
+   ```powershell
+   git worktree add .worktrees/feat-name
+   # Work in isolation, test, commit
+   git push
+   git worktree remove .worktrees/feat-name
+   ```
+   
+   Use `superpowers:using-git-worktrees` skill for structured worktree workflow.
