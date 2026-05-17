@@ -11,22 +11,27 @@ class L9ShadowLedger:
         self.active: dict[str, dict] = {}
         self.history: list[dict] = []
 
-    async def register(self, thesis: dict):
+    async def on_trigger(self, thesis: dict):
         thesis["state"] = ThesisState.ACTIVE.value
         thesis["entry_ts"] = datetime.now(timezone.utc)
+        thesis["entry_price"] = thesis.get("entry_price") or thesis["trigger"]
         thesis["mfe_pct"] = 0.0
         thesis["mae_pct"] = 0.0
         self.active[thesis["thesis_id"]] = thesis
 
-    async def check(self, price: float) -> List[dict]:
+    async def on_tick(self, price: float) -> List[dict]:
         triggered = []
         invalidated = []
         for tid, t in list(self.active.items()):
             entry = t.get("entry_price") or t["trigger"]
-            mfe = (price - entry) / entry * 100
-            mae = (price - entry) / entry * 100
-            t["mfe_pct"] = max(t.get("mfe_pct", 0), mfe)
-            t["mae_pct"] = min(t.get("mae_pct", 0), mae)
+            raw_pct = (price - entry) / entry * 100
+
+            # Flip sign for SHORT: favorable moves (price down) become positive
+            if t["direction"] == "SHORT":
+                raw_pct = -raw_pct
+
+            t["mfe_pct"] = max(t.get("mfe_pct", 0), raw_pct)
+            t["mae_pct"] = min(t.get("mae_pct", 0), raw_pct)
 
             if t["direction"] == "LONG":
                 if price >= t["t2"]:
@@ -75,7 +80,7 @@ class L9ShadowLedger:
 
         return triggered + invalidated
 
-    async def force_expire(self) -> List[dict]:
+    async def on_force_expire(self) -> List[dict]:
         expired = list(self.active.values())
         for t in expired:
             t["state"] = ThesisState.FORCE_EXPIRED.value

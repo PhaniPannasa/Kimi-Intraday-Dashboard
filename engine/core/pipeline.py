@@ -117,9 +117,9 @@ class PipelineOrchestrator:
 
             theses.append(thesis)
 
-        # L9: Register + tick check (same loop so each thesis is checked
+        # L9: Trigger + tick check (same loop so each thesis is checked
         # against its own price, not aggregated across all theses)
-            await self.l9.register({
+            await self.l9.on_trigger({
                 "thesis_id": thesis.thesis_id,
                 "symbol": thesis.symbol,
                 "direction": thesis.direction.value,
@@ -129,7 +129,7 @@ class PipelineOrchestrator:
                 "t2": thesis.t2,
             })
             mock_price = thesis.trigger * random.uniform(0.999, 1.001)
-            results = await self.l9.check(mock_price)
+            results = await self.l9.on_tick(mock_price)
             for r in results:
                 if r["state"] == "STOPPED_OUT":
                     await ws_manager.broadcast({
