@@ -56,7 +56,7 @@ class L8Thesis:
         risk = abs(thesis.trigger - thesis.invalidation)
         reward = abs(thesis.t1 - thesis.trigger)
         thesis.gross_rr = round(reward / risk, 2) if risk > 0 else 0
-        thesis.net_rr = round(thesis.gross_rr * 0.9, 2)  # approximating costs
+        thesis.net_rr = 0.0  # Set by cost model in pipeline
 
         if thesis.net_rr >= 1.5:
             thesis.grade = "ATTRACTIVE"
@@ -71,13 +71,37 @@ class L8Thesis:
 def compute_brokerage(entry: float, exit: float, qty: int = 100,
                       lot_size: int = 50, futures: bool = True,
                       direction: str = "LONG") -> dict:
-    turnover = entry * qty + exit * qty
-    brokerage = min(20, turnover * 0.0001)
-    stt = turnover * (0.00025 if futures else 0.001)
-    exchange_txn = turnover * 0.0000345
-    gst = brokerage * 0.18
-    sebi = turnover * 0.000001
-    stamp = turnover * 0.00002
+    buy_leg = entry * qty
+    sell_leg = exit * qty
+    turnover = buy_leg + sell_leg
+
+    # Brokerage: 0.01% per leg, capped at ?20 per order
+    brokerage = min(20, buy_leg * 0.0001) + min(20, sell_leg * 0.0001)
+
+    # STT: 0.0125% on sell leg only (futures)
+    if futures:
+        if direction == "LONG":
+            stt = sell_leg * 0.000125   # exit is sell for LONG
+        else:
+            stt = buy_leg * 0.000125    # entry is sell for SHORT
+    else:
+        stt = turnover * 0.001
+
+    # Exchange transaction: 0.0019% for futures, 0.00345% for equity
+    exchange_txn = turnover * (0.000019 if futures else 0.0000345)
+
+    # SEBI: ?10 per crore of turnover
+    sebi = turnover * 0.0000001
+
+    # GST: 18% of (brokerage + exchange + SEBI)
+    gst = (brokerage + exchange_txn + sebi) * 0.18
+
+    # Stamp: 0.002% on buy leg only (Maharashtra)
+    if direction == "LONG":
+        stamp = buy_leg * 0.00002   # entry is buy
+    else:
+        stamp = sell_leg * 0.00002  # exit is buy (for SHORT: buy to cover)
+
     total = brokerage + stt + exchange_txn + gst + sebi + stamp
     return {
         "turnover": turnover,

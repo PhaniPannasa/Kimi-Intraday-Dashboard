@@ -33,7 +33,7 @@ def test_l8_assemble_long():
     assert thesis.direction == Direction.LONG
     assert thesis.confluence_score == 4
     assert thesis.gross_rr > 0
-    assert thesis.net_rr > 0
+    assert thesis.net_rr == 0.0  # Set by cost model in pipeline
     assert thesis.grade in ("ATTRACTIVE", "MARGINAL", "UNATTRACTIVE")
 
 
@@ -43,5 +43,5 @@ def test_l8_assemble_short():
     thesis = l8.assemble("HDFC", "SHORT", 1800.0, 1770.0, 1790.0, 1820.0)
     assert thesis.symbol == "HDFC"
     assert thesis.direction == Direction.SHORT
-    assert thesis.net_rr >= 1.0  # MARGINAL after cost haircut
-    assert thesis.grade == "MARGINAL"
+    assert thesis.net_rr == 0.0  # Set by cost model in pipeline
+    assert thesis.grade == "UNATTRACTIVE"  # net_rr 0.0 < 1.0
