@@ -1,6 +1,7 @@
-"""E2E smoke test — starts the FastAPI app and hits all endpoints."""
+"""E2E smoke test — starts the FastAPI app and hits all REST + WebSocket endpoints."""
 import pytest
 from httpx import AsyncClient, ASGITransport
+from fastapi.testclient import TestClient
 from main import app
 
 
@@ -46,3 +47,12 @@ async def test_smoke_edge():
         assert response.status_code == 200
         data = response.json()
         assert "tiers" in data
+
+
+def test_smoke_websocket():
+    """Verify WebSocket stream connection works (sync TestClient)."""
+    client = TestClient(app)
+    with client.websocket_connect("/ws/v1/stream") as websocket:
+        websocket.send_json({"action": "subscribe", "channels": ["market"]})
+        data = websocket.receive_json()
+        assert data["type"] == "L1_CONTEXT"
