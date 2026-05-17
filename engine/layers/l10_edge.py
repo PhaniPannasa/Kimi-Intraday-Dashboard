@@ -31,8 +31,6 @@ def benjamini_hochberg(p_values: list[float], alpha: float = 0.05) -> list[bool]
     for rank, idx in enumerate(sorted_idx, start=1):
         if p_values[idx] <= rank * alpha / m:
             k = rank
-        else:
-            break
 
     significant = [False] * m
     for rank, idx in enumerate(sorted_idx, start=1):

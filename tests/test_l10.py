@@ -71,9 +71,11 @@ def test_benjamini_hochberg_basic():
 
 
 def test_benjamini_hochberg_monotonic():
+    """BH must find largest k, scanning all p-values — not break on first failure."""
     p_values = [0.009, 0.021, 0.022, 0.023, 0.5]
     significant = benjamini_hochberg(p_values, alpha=0.05)
-    assert significant == [True, False, False, False, False]
+    # With correct BH (scan all): k=4
+    assert significant == [True, True, True, True, False]
 
 
 def test_benjamini_hochberg_empty():
