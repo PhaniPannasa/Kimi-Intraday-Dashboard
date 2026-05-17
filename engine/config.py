@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     nifty_universe_count: int = 100
     top_n: int = 25
 
-    model_config = SettingsConfigDict(env_file=".env")
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
 settings = Settings()
