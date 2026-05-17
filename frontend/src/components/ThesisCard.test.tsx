@@ -29,6 +29,7 @@ describe('ThesisPanel', () => {
         gross_rr: 1.5,
         net_rr: 1.35,
         grade: 'ATTRACTIVE',
+        confluence_score: 5,
         time_decay_multiplier: 1.0,
         actionability_tier: 'Tradeable',
         valid_until: '2026-05-16T00:00:00Z',

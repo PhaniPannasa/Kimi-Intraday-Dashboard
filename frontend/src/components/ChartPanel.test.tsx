@@ -9,6 +9,7 @@ vi.mock('lightweight-charts', () => {
   const mockChart = {
     addCandlestickSeries: vi.fn(() => mockSeries),
     remove: vi.fn(),
+    timeScale: vi.fn(() => ({ fitContent: vi.fn() })),
   };
   return {
     createChart: vi.fn(() => mockChart),

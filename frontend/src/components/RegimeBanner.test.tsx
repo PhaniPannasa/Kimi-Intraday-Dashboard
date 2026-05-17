@@ -12,7 +12,7 @@ describe('RegimeBanner', () => {
 
   it('should show loading when context is null', () => {
     render(<RegimeBanner />);
-    expect(screen.getByText(/loading/i)).toBeDefined();
+    expect(screen.getByRole('status')).toBeDefined();
   });
 
   it('should show regime when context is set', () => {
