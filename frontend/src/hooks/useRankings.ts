@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { RankingEntry } from '@/types/api';
 
 async function fetchRankings(direction: 'long' | 'short'): Promise<RankingEntry[]> {
-  const res = await fetch(`http://localhost:8084/rankings/top25/${direction}`);
+  const res = await fetch(`/api/rankings/top25/${direction}`);
   if (!res.ok) throw new Error('Failed to fetch rankings');
   return res.json();
 }
