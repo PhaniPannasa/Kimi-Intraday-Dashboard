@@ -24,6 +24,7 @@ class MarketContextFrame(BaseModel):
     time_bucket: str = "Pre-Open"
     event_flag: Optional[str] = None
     breadth: Breadth = Breadth.MIXED
+    vix_value: float = 0.0
     premarket_bias: str = "Neutral"
     bank_nifty_divergence: float = 0.0
 

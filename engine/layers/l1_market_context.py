@@ -229,6 +229,7 @@ class L1MarketContext:
             regime_confidence=round(confidence, 2),
             volatility_qualifier=classify_volatility_qualifier(latest_vol_z),
             vix_band=vix_band.value,
+            vix_value=vix_value,
             vix_trajectory=classify_vix_trajectory(self.vix_history),
             time_bucket=get_time_bucket(now),
             event_flag=event_flag,
