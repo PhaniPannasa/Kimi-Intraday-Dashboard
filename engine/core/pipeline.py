@@ -477,15 +477,18 @@ class PipelineOrchestrator:
             theses.append(thesis)
 
             # L9: register & tick check
-            await self.l9.on_trigger({
+            await self.l9.on_create({
                 "thesis_id": thesis.thesis_id,
                 "symbol": thesis.symbol,
                 "direction": thesis.direction.value,
+                "setup_type": thesis.setup_type.value,
                 "trigger": thesis.trigger,
                 "invalidation": thesis.invalidation,
                 "t1": thesis.t1,
                 "t2": thesis.t2,
+                "cost_breakdown": thesis.cost_breakdown,
             })
+            await self.l9.on_trigger(thesis.thesis_id, thesis.trigger)
             mock_price = thesis.trigger * random.uniform(0.999, 1.001)
             l9_results = await self.l9.on_tick(mock_price)
             for r in l9_results:
