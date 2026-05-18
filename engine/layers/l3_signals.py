@@ -3,17 +3,17 @@ import pandas as pd
 import numpy as np
 from typing import Optional
 
-from engine.layers.l3_indicators import (
+from layers.l3_indicators import (
     compute_indicators_single_tf,
     compute_all_indicators,
     detect_macd_divergence as _detect_macd_divergence_new,
 )
-from engine.layers.l3_volume_seasonality import (
+from layers.l3_volume_seasonality import (
     adjust_volume,
     compute_volume_confirm,
     compute_volume_zscore as _compute_volume_zscore_new,
 )
-from engine.layers.l3_options import classify_oi as _classify_oi_new
+from layers.l3_options import classify_oi as _classify_oi_new
 
 
 def compute_indicators(df: pd.DataFrame) -> pd.DataFrame:
