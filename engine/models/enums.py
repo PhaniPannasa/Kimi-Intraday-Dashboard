@@ -64,3 +64,13 @@ class LiquidityQuality(str, Enum):
     GOOD = "Good"
     MARGINAL = "Marginal"
     POOR = "Poor"
+
+
+class TimeBucket(str, Enum):
+    PRE_OPEN = "Pre-Open"
+    OPENING_SHOCK = "Opening Shock"              # 9:15-9:30
+    TREND_ESTABLISHMENT = "Trend Establishment"  # 9:30-10:45
+    MID_MORNING = "Mid-Morning"                  # 10:45-12:00
+    LUNCH = "Lunch"                              # 12:00-13:00
+    AFTERNOON_RECOVERY = "Afternoon Recovery"    # 13:00-14:30
+    CLOSING_HOUR = "Closing Hour"                # 14:30-15:30
