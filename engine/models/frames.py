@@ -57,6 +57,12 @@ class ThesisCard(BaseModel):
     actionability_tier: ActionabilityTier = ActionabilityTier.RESEARCH_ONLY
     valid_until: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     preferred_regime: Regime = Regime.TRENDING_UP
+    # NEW: cost transparency fields
+    cost_breakdown: Optional[dict] = None
+    slippage_bps: int = 0
+    liquidity_quality: LiquidityQuality = LiquidityQuality.GOOD
+    net_reward: float = 0.0
+    net_risk: float = 0.0
 
 
 class ThesisOutcome(BaseModel):

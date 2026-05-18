@@ -26,7 +26,7 @@ from layers.l3_signals import L3Signals, ema_aligned, detect_macd_divergence
 from layers.l5_scoring import L5Scoring
 from layers.l6_ranking import L6Ranking
 from layers.l7_confluence import L7Confluence
-from layers.l8_thesis import L8Thesis, L8CostModel
+from layers.l8_thesis import L8Thesis
 from layers.l9_monitor import L9ShadowLedger
 from layers.l10_edge import L10EdgeLookup
 from models.enums import Direction, Regime, SetupType
@@ -290,7 +290,6 @@ class PipelineOrchestrator:
         self.l6 = L6Ranking(top_n=25)
         self.l7 = L7Confluence()
         self.l8 = L8Thesis()
-        self.l8_cost = L8CostModel()
         self.l9 = L9ShadowLedger()
         self.l10 = L10EdgeLookup()
 
@@ -438,33 +437,41 @@ class PipelineOrchestrator:
             thesis = self.l8.assemble(
                 symbol=rank_entry.symbol,
                 direction=direction,
-                orb_high=orb_high,
-                orb_low=orb_low,
-                vwap=vwap_val,
-                pdh=pdh,
-                confluence_score=rank_entry.confluence_score,
+                setup_type=1,  # ORB_15MIN
+                setup_params={
+                    "orb_high": orb_high,
+                    "orb_low": orb_low,
+                    "vwap": vwap_val,
+                    "pdh": pdh,
+                    "pdl": orb_low * 0.99,
+                },
+                confluence_data={
+                    "close": vwap_val,
+                    "high": orb_high,
+                    "low": orb_low,
+                    "volume": 50000,
+                    "median_volume": 25000,
+                    "ema9": vwap_val,
+                    "ema20": vwap_val * 0.99,
+                    "ema50": vwap_val * 0.98,
+                    "atr": max((orb_high - orb_low) * 0.5, 1.0),
+                    "price": vwap_val,
+                    "invalidation": orb_low,
+                    "t1": vwap_val * 1.01,
+                    "bar_range": orb_high - orb_low,
+                    "median_range": orb_high - orb_low,
+                    "direction": direction,
+                    "is_opening": False,
+                },
+                cost_params={
+                    "qty": 100,
+                    "lot_size": 50,
+                    "futures": True,
+                    "liquidity_quality": "Good",
+                    "fo_ban": False,
+                    "shortability": "FUTURES_OPTIONS",
+                },
             )
-
-            cost_data = {
-                "trigger": thesis.trigger,
-                "t1": thesis.t1,
-                "invalidation": thesis.invalidation,
-                "lot_size": 50,
-                "futures": True,
-                "direction": direction,
-                "time_remaining_min": 120,
-            }
-            costs = self.l8_cost.apply(cost_data)
-            thesis.gross_rr = costs["gross_rr"]
-            thesis.net_rr = costs["net_rr"]
-            thesis.time_decay_multiplier = costs["time_decay_multiplier"]
-
-            if thesis.net_rr >= 1.5:
-                thesis.grade = "ATTRACTIVE"
-            elif thesis.net_rr >= 1.0:
-                thesis.grade = "MARGINAL"
-            else:
-                thesis.grade = "UNATTRACTIVE"
 
             theses.append(thesis)
 
