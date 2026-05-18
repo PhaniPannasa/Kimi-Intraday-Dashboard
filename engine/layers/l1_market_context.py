@@ -12,6 +12,61 @@ def compute_ema(series: pl.Series, length: int) -> pl.Series:
 def compute_realized_vol(returns: pl.Series, window: int = 20) -> pl.Series:
     return returns.rolling_std(window) * np.sqrt(252)
 
+def compute_vol_z_diurnal(
+    nifty_df: pl.DataFrame,
+    current_bucket: int | None = None,
+    n_buckets: int = 75,
+) -> float:
+    """Compute vol z-score using same-time-of-day baseline.
+
+    Compares current realized vol against the historical distribution
+    for the same 5-min bucket, correcting for the intraday U-shape pattern.
+
+    Args:
+        nifty_df: Nifty 5-min bars
+        current_bucket: Which 5-min bucket (0-74) the current bar falls in.
+                        If None, uses the last bar's position.
+        n_buckets: Number of 5-min buckets per day (default 75)
+
+    Returns:
+        vol_z: How many stddevs current vol is above/below the same-bucket mean
+    """
+    if len(nifty_df) < n_buckets:
+        return 0.0
+
+    returns = nifty_df["close"].pct_change()
+    if len(returns) < 22:
+        return 0.0
+
+    # 20-bar realized vol
+    vol = returns.rolling_std(20).to_list()
+
+    # Determine current bucket from bar position within the day
+    if current_bucket is None:
+        current_bucket = (len(nifty_df) - 1) % n_buckets
+
+    # Extract vol values for this bucket across all available days
+    bucket_vols = []
+    for i in range(current_bucket, len(vol), n_buckets):
+        v = vol[i]
+        if v is not None and not (isinstance(v, float) and (v != v)):
+            bucket_vols.append(v)
+
+    bucket_vols = [v for v in bucket_vols if v is not None]
+    if len(bucket_vols) < 3:
+        return 0.0
+
+    mean = np.mean(bucket_vols)
+    std = np.std(bucket_vols)
+    if std == 0:
+        return 0.0
+
+    current_vol = vol[-1]
+    if current_vol is None:
+        return 0.0
+
+    return (current_vol - mean) / std
+
 
 COLD_START_END = time(10, 45)
 
@@ -32,7 +87,8 @@ def get_primary_ema(df_5m: pl.DataFrame) -> pl.Series:
 
 
 def classify_regime(nifty_df: pl.DataFrame, df_15m: pl.DataFrame | None = None,
-                    use_cold_start: bool = False) -> tuple:
+                    use_cold_start: bool = False,
+                    current_time_bucket: int | None = None) -> tuple:
     SLOPE_THRESHOLD = 0.0003
     VOL_Z_THRESHOLD = 0.5
 
@@ -45,12 +101,8 @@ def classify_regime(nifty_df: pl.DataFrame, df_15m: pl.DataFrame | None = None,
         ema_series = get_primary_ema(nifty_df)
         slope = ema_series.diff(5)
 
-    returns = nifty_df["close"].pct_change() if len(nifty_df) >= 2 else pl.Series("", [0.0])
-    vol = compute_realized_vol(returns, 20)
-    vol_baseline = vol.rolling_mean(60 * 75)
-    vol_z = (vol - vol_baseline) / vol_baseline.rolling_std(60 * 75)
-
-    latest_vol_z = vol_z.tail(1).to_list()[0] or 0
+    # Use diurnal (time-of-day adjusted) vol_z instead of flat baseline
+    latest_vol_z = compute_vol_z_diurnal(nifty_df, current_bucket=current_time_bucket)
     latest_slope = slope.tail(1).to_list()[0] or 0
 
     if abs(latest_slope) < SLOPE_THRESHOLD:
@@ -170,18 +222,16 @@ class L1MarketContext:
         now = current_time or datetime.now().time()
         use_cold = should_use_cold_start(now)
 
-        regime, confidence = classify_regime(nifty_df, df_15m, use_cold)
+        # Compute current 5-min bucket index (0-74) for diurnal vol baseline
+        minutes_since_915 = max(0, (now.hour - 9) * 60 + now.minute - 15)
+        current_bucket = max(0, min(74, minutes_since_915 // 5))
+
+        regime, confidence = classify_regime(nifty_df, df_15m, use_cold, current_bucket)
         vix_band = classify_vix_band(vix_value, self.vix_history)
         breadth = compute_breadth(stock_data)
 
-        # Compute vol_z for volatility qualifier
-        returns = nifty_df["close"].pct_change() if len(nifty_df) >= 2 else pl.Series("", [0.0])
-        vol = compute_realized_vol(returns, 20) if len(nifty_df) >= 20 else pl.Series("", [0.0])
-        if len(nifty_df) >= 50:
-            vol_z_series = (vol - vol.rolling_mean(60 * 75)) / vol.rolling_std(60 * 75)
-            latest_vol_z = vol_z_series.tail(1).to_list()[0] or 0.0
-        else:
-            latest_vol_z = 0.0
+        # Compute vol_z for volatility qualifier using diurnal baseline
+        latest_vol_z = compute_vol_z_diurnal(nifty_df, current_bucket=current_bucket)
 
         return MarketContextFrame(
             regime=regime,
