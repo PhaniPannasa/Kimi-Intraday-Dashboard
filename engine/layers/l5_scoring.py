@@ -14,23 +14,31 @@ MODIFIERS = {
     "index_change": -2,
 }
 
+SHORT_WEIGHT_DISCOUNT = 0.92
+
+REGIME_WEIGHTS_SHORT = {
+    regime: {k: round(v * SHORT_WEIGHT_DISCOUNT, 4) for k, v in weights.items()}
+    for regime, weights in REGIME_WEIGHTS.items()
+}
+
 
 def compute_f1_trend(ema_aligned: bool, supertrend_bull: bool, adx: float,
                      direction: str = "LONG") -> float:
-    """F1 Trend: Bullish alignment for LONG, Inverted (bearish) for SHORT."""
+    """F1 Trend: Supertrend direction + ADX strength.
+
+    EMA alignment is intentionally NOT scored here — L7 Check 4 (HTF Alignment)
+    independently gates on EMA(9)>EMA(20)>EMA(50).
+    """
     score = 0
     if direction == "LONG":
-        if ema_aligned:
-            score += 40
         if supertrend_bull:
-            score += 35
-    else:  # SHORT — inverted
-        if not ema_aligned:
-            score += 40
+            score += 50
+    else:
         if not supertrend_bull:
-            score += 35
+            score += 50
     if adx > 25:
         score += 25
+    score += min(adx / 2, 25)
     return min(score, 100)
 
 
@@ -55,17 +63,19 @@ def compute_f2_momentum(rsi: float, macd_div: bool, roc_z: float,
 
 def compute_f3_volume(above_vwap: bool, vol_z: float, vol_confirm: bool,
                       direction: str = "LONG") -> float:
-    """F3 Volume: Above VWAP for LONG, Inverted (below VWAP) for SHORT."""
+    """F3 Volume: VWAP position + seasonally-adjusted volume strength.
+
+    vol_confirm is intentionally NOT scored here — L7 Check 2 (Volume
+    Confirmation) independently gates on V_adj >= 1.5× median.
+    """
     score = 0
     if direction == "LONG":
         if above_vwap:
-            score += 40
+            score += 50
     else:
         if not above_vwap:
-            score += 40
-    score += max(0, min(30, abs(vol_z) * 10))
-    if vol_confirm:
-        score += 30
+            score += 50
+    score += max(0, min(50, abs(vol_z) * 15))
     return min(score, 100)
 
 
@@ -108,10 +118,12 @@ def compute_f7_posrng(pos_52w: float, cpr_dist: float, direction: str = "LONG") 
     return min(score, 100)
 
 
-def compute_raw_score(factors: dict, regime: str) -> float:
-    weights = REGIME_WEIGHTS.get(regime, REGIME_WEIGHTS[Regime.RANGE_BOUND.value])
-    raw = sum(factors.get(k, 0) * weights.get(k, 0) for k in weights)
-    return raw
+def compute_raw_score(factors: dict, regime: str, direction: str = "LONG") -> float:
+    if direction == "SHORT":
+        weights = REGIME_WEIGHTS_SHORT.get(regime, REGIME_WEIGHTS_SHORT[Regime.RANGE_BOUND.value])
+    else:
+        weights = REGIME_WEIGHTS.get(regime, REGIME_WEIGHTS[Regime.RANGE_BOUND.value])
+    return sum(factors.get(k, 0) * weights.get(k, 0) for k in weights)
 
 
 class L5Scoring:
@@ -169,7 +181,7 @@ class L5Scoring:
         )
 
         factors = {"f1": f1, "f2": f2, "f3": f3, "f4": f4, "f5": f5, "f6": f6, "f7": f7}
-        raw = compute_raw_score(factors, regime)
+        raw = compute_raw_score(factors, regime, direction=direction)
 
         # Apply liquidity multiplier
         liq_mult = symbol_data.get("liquidity_multiplier", 1.0)
@@ -189,10 +201,6 @@ class L5Scoring:
             modifiers += MODIFIERS["weak_sector"]
 
         s_final = max(0, min(100, s_liq + modifiers))
-
-        # Short asymmetry penalty
-        if direction == "SHORT":
-            s_final = s_final * 0.92
 
         result = {
             "symbol": symbol,

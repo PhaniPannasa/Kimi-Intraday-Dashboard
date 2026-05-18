@@ -16,21 +16,21 @@ from models.enums import Regime
 
 
 class TestF1TrendDirection:
-    def test_long_bullish_alignment_scores_100(self):
+    def test_long_bullish_alignment_scores_high(self):
         score = compute_f1_trend(ema_aligned=True, supertrend_bull=True, adx=30, direction="LONG")
-        assert score == 100
+        assert score >= 85
 
-    def test_short_bearish_alignment_scores_100(self):
+    def test_short_bearish_alignment_scores_high(self):
         score = compute_f1_trend(ema_aligned=False, supertrend_bull=False, adx=30, direction="SHORT")
-        assert score == 100
+        assert score >= 85
 
     def test_long_mixed_gives_partial(self):
         score = compute_f1_trend(ema_aligned=True, supertrend_bull=False, adx=20, direction="LONG")
-        assert score == 40
+        assert score == 10
 
     def test_short_mixed_gives_partial(self):
         score = compute_f1_trend(ema_aligned=True, supertrend_bull=False, adx=20, direction="SHORT")
-        assert score == 35
+        assert score == 60
 
 
 class TestF2MomentumDirection:
@@ -54,11 +54,11 @@ class TestF2MomentumDirection:
 class TestF3VolumeDirection:
     def test_long_above_vwap_scores_high(self):
         score = compute_f3_volume(above_vwap=True, vol_z=3.0, vol_confirm=True, direction="LONG")
-        assert score == 100
+        assert score == 95
 
     def test_short_below_vwap_scores_high(self):
         score = compute_f3_volume(above_vwap=False, vol_z=3.0, vol_confirm=True, direction="SHORT")
-        assert score == 100
+        assert score == 95
 
     def test_long_below_vwap_loses_40(self):
         score = compute_f3_volume(above_vwap=False, vol_z=0, vol_confirm=False, direction="LONG")
@@ -113,6 +113,18 @@ class TestF7PosRngDirection:
     def test_short_bottom_20pct_scores_low(self):
         score = compute_f7_posrng(pos_52w=0.1, cpr_dist=0.0, direction="SHORT")
         assert score < 20
+
+
+class TestCollinearityRemoved:
+    def test_f1_ema_aligned_does_nothing(self):
+        score_with_ema = compute_f1_trend(ema_aligned=True, supertrend_bull=True, adx=30, direction="LONG")
+        score_without_ema = compute_f1_trend(ema_aligned=False, supertrend_bull=True, adx=30, direction="LONG")
+        assert score_with_ema == score_without_ema
+
+    def test_f3_vol_confirm_does_nothing(self):
+        score_with_confirm = compute_f3_volume(above_vwap=True, vol_z=1.0, vol_confirm=True, direction="LONG")
+        score_without_confirm = compute_f3_volume(above_vwap=True, vol_z=1.0, vol_confirm=False, direction="LONG")
+        assert score_with_confirm == score_without_confirm
 
 
 class TestL5ScoringIntegration:

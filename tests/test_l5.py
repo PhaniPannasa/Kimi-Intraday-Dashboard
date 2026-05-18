@@ -4,8 +4,8 @@ from models.enums import Regime
 
 
 def test_compute_f1_trend():
-    assert compute_f1_trend(True, True, 30) == 100
-    assert compute_f1_trend(False, False, 10) == 0
+    assert compute_f1_trend(True, True, 30) >= 85
+    assert compute_f1_trend(False, False, 10) == 5
 
 
 def test_compute_raw_score():
