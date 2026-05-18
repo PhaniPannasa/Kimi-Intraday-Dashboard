@@ -59,7 +59,7 @@ class ThesisCard(BaseModel):
     preferred_regime: Regime = Regime.TRENDING_UP
     # NEW: cost transparency fields
     cost_breakdown: Optional[dict] = None
-    slippage_bps: int = 0
+    slippage_bps: float = 0.0
     liquidity_quality: LiquidityQuality = LiquidityQuality.GOOD
     net_reward: float = 0.0
     net_risk: float = 0.0
