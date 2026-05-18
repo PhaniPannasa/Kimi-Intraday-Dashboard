@@ -50,6 +50,50 @@ SLIPPAGE = {
     "Poor": {"normal": 35, "stop": 40},
 }
 
+SLIPPAGE_LQS_BOUNDARIES = [
+    (0.0, 0.30, "Poor"),
+    (0.30, 0.55, "Marginal"),
+    (0.55, 0.80, "Good"),
+    (0.80, 1.00, "Excellent"),
+]
+
+
+def _bucket_total_slip(bucket_name: str, is_stop: bool) -> float:
+    """Return total slippage in bps for a bucket, adding stop add-on when applicable."""
+    slip = SLIPPAGE[bucket_name]
+    total = slip["normal"]
+    if is_stop:
+        total += slip["stop"]
+    return float(total)
+
+
+def compute_slippage_continuous(lqs: float, is_stop: bool = False) -> float:
+    """Return slippage in bps via linear interpolation of LQS between bucket midpoints."""
+    lqs = max(0.0, min(1.0, lqs))
+
+    for i, (lo, hi, bucket) in enumerate(SLIPPAGE_LQS_BOUNDARIES):
+        if lo <= lqs <= hi:
+            midpoint = (lo + hi) / 2
+            bucket_slip = _bucket_total_slip(bucket, is_stop)
+
+            if lqs <= midpoint and i > 0:
+                prev_lo, prev_hi, prev_bucket = SLIPPAGE_LQS_BOUNDARIES[i - 1]
+                prev_midpoint = (prev_lo + prev_hi) / 2
+                prev_slip = _bucket_total_slip(prev_bucket, is_stop)
+                t = (lqs - prev_midpoint) / (midpoint - prev_midpoint) if midpoint != prev_midpoint else 0
+                return round(prev_slip + t * (bucket_slip - prev_slip), 1)
+
+            elif lqs > midpoint and i < len(SLIPPAGE_LQS_BOUNDARIES) - 1:
+                next_lo, next_hi, next_bucket = SLIPPAGE_LQS_BOUNDARIES[i + 1]
+                next_midpoint = (next_lo + next_hi) / 2
+                next_slip = _bucket_total_slip(next_bucket, is_stop)
+                t = (lqs - midpoint) / (next_midpoint - midpoint) if next_midpoint != midpoint else 0
+                return round(bucket_slip + t * (next_slip - bucket_slip), 1)
+
+            return float(bucket_slip)
+
+    return _bucket_total_slip("Good", is_stop)
+
 
 def compute_brokerage_equity(entry: float, exit: float, qty: int = 100,
                               direction: str = "LONG") -> dict:
@@ -139,16 +183,16 @@ def compute_brokerage(entry: float, exit: float, qty: int = 100,
     return compute_brokerage_equity(entry, exit, qty, direction)
 
 
-def compute_slippage(liquidity_quality: str, is_stop: bool = False) -> int:
-    """Return slippage in basis points for a given liquidity bucket.
+def compute_slippage(liquidity_quality: str | float, is_stop: bool = False) -> float:
+    """Return slippage in basis points.
 
-    For stop orders, the total slippage is normal + stop add-on.
+    Accepts string bucket name ("Excellent"/"Good"/"Marginal"/"Poor")
+    for backward compatibility, or a float LQS value (0.0-1.0) for continuous
+    interpolation.
     """
-    bucket = SLIPPAGE.get(liquidity_quality, SLIPPAGE["Good"])
-    normal = bucket["normal"]
-    if is_stop:
-        return normal + bucket["stop"]
-    return normal
+    if isinstance(liquidity_quality, (int, float)):
+        return compute_slippage_continuous(float(liquidity_quality), is_stop)
+    return _bucket_total_slip(liquidity_quality, is_stop)
 
 
 def compute_net_rr(trigger: float, t1: float, invalidation: float,

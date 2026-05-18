@@ -74,3 +74,33 @@ def test_short_direction_cost_application():
     assert costs["stt"] == pytest.approx(1000 * 100 * 0.000125, rel=0.01)
     # Stamp: 0.002% on buy leg = exit for SHORT (buy to cover)
     assert costs["stamp"] == pytest.approx(990 * 100 * 0.00002, rel=0.01)
+
+
+def test_slippage_continuous_no_cliff():
+    from layers.l8_cost_model import compute_slippage_continuous
+    slip_marginal = compute_slippage_continuous(lqs=0.549, is_stop=False)
+    slip_good = compute_slippage_continuous(lqs=0.551, is_stop=False)
+    assert abs(slip_marginal - slip_good) < 3
+
+
+def test_slippage_continuous_endpoints():
+    from layers.l8_cost_model import compute_slippage_continuous
+    assert compute_slippage_continuous(lqs=0.0, is_stop=False) == 35
+    assert compute_slippage_continuous(lqs=1.0, is_stop=False) == 5
+    assert compute_slippage_continuous(lqs=0.0, is_stop=True) == 75
+    assert compute_slippage_continuous(lqs=1.0, is_stop=True) == 13
+
+
+def test_slippage_continuous_monotonic():
+    from layers.l8_cost_model import compute_slippage_continuous
+    prev = 100
+    for lqs in [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]:
+        current = compute_slippage_continuous(lqs=lqs, is_stop=False)
+        assert current <= prev, f"LQS={lqs}: {current} > {prev}"
+        prev = current
+
+
+def test_original_discrete_still_works():
+    from layers.l8_cost_model import compute_slippage
+    assert compute_slippage("Excellent", is_stop=False) == 5
+    assert compute_slippage("Good", is_stop=True) == 25
