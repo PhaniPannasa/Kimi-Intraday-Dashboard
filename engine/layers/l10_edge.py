@@ -1,9 +1,15 @@
 from typing import Optional
-import random
-
 import scipy.stats as stats
-
 from models.enums import SetupType, Regime, Direction
+
+TIER_CONFIG = {
+    1: {"n_min": 30, "ci_max_halfwidth": 0.15, "drop_sector": False, "drop_bucket": False, "drop_regime": False},
+    2: {"n_min": 40, "ci_max_halfwidth": 0.14, "drop_sector": True,  "drop_bucket": False, "drop_regime": False},
+    3: {"n_min": 50, "ci_max_halfwidth": 0.14, "drop_sector": True,  "drop_bucket": True,  "drop_regime": False},
+    4: {"n_min": 50, "ci_max_halfwidth": 0.14, "drop_sector": True,  "drop_bucket": False, "drop_regime": True},
+    5: {"n_min": 80, "ci_max_halfwidth": 0.12, "drop_sector": True,  "drop_bucket": True,  "drop_regime": True},
+    6: {"n_min": 50, "ci_max_halfwidth": 0.14, "drop_sector": True,  "drop_bucket": True,  "drop_regime": True},
+}
 
 
 def wilson_ci(hit_rate: float, n: int, z: float = 1.96) -> tuple[float, float]:
@@ -17,23 +23,22 @@ def wilson_ci(hit_rate: float, n: int, z: float = 1.96) -> tuple[float, float]:
     return (max(0.0, centre - half_width), min(1.0, centre + half_width))
 
 
-def benjamini_hochberg(p_values: list[float], alpha: float = 0.05) -> list[bool]:
-    """Benjamini-Hochberg FDR correction -- standard step-up procedure.
+def check_ci_width(ci_lower: float, ci_upper: float, max_halfwidth: float) -> bool:
+    """Return True if CI half-width <= max allowed."""
+    halfwidth = (ci_upper - ci_lower) / 2
+    return halfwidth <= max_halfwidth
 
-    1. Sort p-values ascending
-    2. Find largest rank k where p_(k) <= (k/m) * alpha
-    3. Reject ALL hypotheses with rank <= k
-    """
+
+def benjamini_hochberg(p_values: list[float], alpha: float = 0.10) -> list[bool]:
+    """Benjamini-Hochberg FDR correction. Spec: alpha = 0.10 (not 0.05)."""
     if not p_values:
         return []
     m = len(p_values)
     sorted_idx = sorted(range(m), key=lambda i: p_values[i])
-
     k = 0
     for rank, idx in enumerate(sorted_idx, start=1):
         if p_values[idx] <= rank * alpha / m:
             k = rank
-
     significant = [False] * m
     for rank, idx in enumerate(sorted_idx, start=1):
         if rank <= k:
@@ -65,141 +70,105 @@ def beta_binomial_posterior(k: int, n: int, alpha_prior: float = 6,
     }
 
 
-def bayesian_bootstrap(returns: list[float], n_bootstrap: int = 10000) -> dict:
-    """Bayesian bootstrap for mean net return."""
-    means = []
-    n = len(returns)
-    for _ in range(n_bootstrap):
-        weights = [random.random() for _ in range(n)]
-        total = sum(weights)
-        weights = [w / total for w in weights]
-        mean = sum(w * r for w, r in zip(weights, returns))
-        means.append(mean)
-    means.sort()
-    return {
-        "mean": sum(means) / len(means),
-        "ci_lower": means[int(0.025 * n_bootstrap)],
-        "ci_upper": means[int(0.975 * n_bootstrap)],
-    }
-
-
 def check_min_samples(n: int, threshold: int = 15) -> bool:
-    """Return True if the sample count meets the minimum threshold."""
     return n >= threshold
 
 
-def check_confidence_interval(hit_rate: float, ci_lower: float, ci_upper: float) -> bool:
-    """Return True if the hit rate falls within the confidence interval bounds."""
-    return ci_lower <= hit_rate <= ci_upper
-
-
 class L10EdgeLookup:
-    """Edge-statistics lookup table (Layer 10).
-
-    Stores pre-computed edge metrics (hit rate, confidence interval, average
-    net return) keyed by ``(setup_type, regime, direction, sector, time_bucket)``
-    and answers whether a given combination is statistically significant.
-    """
-
     def __init__(self):
         self.edge_store: dict[tuple, dict] = {}
 
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
     @staticmethod
     def _coerce(val):
-        """Extract ``.value`` from an enum member, or return the raw value."""
         return val.value if isinstance(val, (SetupType, Regime, Direction)) else val
 
     def _make_key(
         self,
-        setup_type: SetupType,
-        regime: Regime,
+        setup_type: SetupType | None,
+        regime: Regime | None,
         direction: Direction,
-        sector: Optional[int],
-        time_bucket: Optional[int],
+        sector: int | None,
+        time_bucket: int | None,
     ) -> tuple:
         return (
-            self._coerce(setup_type),
-            self._coerce(regime),
+            self._coerce(setup_type) if setup_type is not None else None,
+            self._coerce(regime) if regime is not None else None,
             self._coerce(direction),
             sector,
             time_bucket,
         )
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
-
     def populate(self, rows: list[dict]) -> None:
-        """Load edge-statistic rows into the lookup store.
-
-        Each row should contain at least the keys
-        ``setup_type``, ``regime``, ``direction``, ``sector``, ``time_bucket``,
-        ``n``, ``hit_rate``, ``ci_lower``, ``ci_upper``, ``avg_net_return``,
-        ``std_net_return``.
-        """
         for row in rows:
             key = self._make_key(
-                row["setup_type"],
-                row["regime"],
-                row["direction"],
-                row.get("sector"),
-                row.get("time_bucket"),
+                row["setup_type"], row["regime"], row["direction"],
+                row.get("sector"), row.get("time_bucket"),
             )
             self.edge_store[key] = row
+
+    def _check_tier(self, row: dict, tier: int) -> bool:
+        config = TIER_CONFIG[tier]
+        n = row.get("n", 0)
+        if n < config["n_min"]:
+            return False
+        ci_lower = row.get("ci_lower", 0.0)
+        ci_upper = row.get("ci_upper", 0.0)
+        if ci_lower == 0.0 and ci_upper == 0.0:
+            ci_lower, ci_upper = wilson_ci(row.get("hit_rate", 0.5), n)
+        if not check_ci_width(ci_lower, ci_upper, config["ci_max_halfwidth"]):
+            return False
+        return True
 
     def lookup(
         self,
         setup_type: SetupType,
         regime: Regime,
         direction: Direction,
-        sector: Optional[int] = None,
-        time_bucket: Optional[int] = None,
+        sector: int | None = None,
+        time_bucket: int | None = None,
     ) -> dict:
-        """Look up edge statistics for the given combination.
+        """Hierarchical 6-tier lookup with fallback."""
+        tier_keys = [
+            (1, setup_type, regime, sector, time_bucket),
+            (2, setup_type, regime, None, time_bucket),
+            (3, setup_type, regime, None, None),
+            (4, setup_type, None, None, time_bucket),
+            (5, setup_type, None, None, None),
+            (6, None, None, None, None),
+        ]
+        for tier, st, rg, sc, tb in tier_keys:
+            key = self._make_key(
+                st if st is not None else None,
+                rg if rg is not None else None,
+                direction, sc, tb,
+            )
+            row = self.edge_store.get(key, {})
+            if row and self._check_tier(row, tier):
+                return self._build_result(row, setup_type, regime, direction, sector, time_bucket, tier)
+        return {
+            "setup_type": setup_type, "regime": regime, "direction": direction,
+            "sector": sector, "time_bucket": time_bucket,
+            "n": 0, "hit_rate": 0.0, "ci_lower": 0.0, "ci_upper": 0.0,
+            "is_significant": False, "avg_net_return": 0.0, "std_net_return": 0.0,
+            "tier": 0,
+        }
 
-        Returns a dictionary with keys:
-        ``setup_type``, ``regime``, ``direction``, ``sector``, ``time_bucket``,
-        ``n``, ``hit_rate``, ``ci_lower``, ``ci_upper``, ``is_significant``,
-        ``avg_net_return``, ``std_net_return``.
-
-        ``is_significant`` is ``True`` only when all of the following hold:
-
-        * the sample count meets the minimum threshold (>= 15)
-        * the hit rate falls within the confidence interval
-        * the lower CI bound exceeds 0.35
-        """
-        key = self._make_key(setup_type, regime, direction, sector, time_bucket)
-        row = self.edge_store.get(key, {})
-
+    def _build_result(self, row, setup_type, regime, direction, sector, time_bucket, tier) -> dict:
         n = row.get("n", 0)
         hit_rate = row.get("hit_rate", 0.0)
         ci_lower = row.get("ci_lower", 0.0)
         ci_upper = row.get("ci_upper", 0.0)
-
         if n > 0 and ci_lower == 0.0 and ci_upper == 0.0:
             ci_lower, ci_upper = wilson_ci(hit_rate, n)
-
-        is_significant = (
-            check_min_samples(n)
-            and check_confidence_interval(hit_rate, ci_lower, ci_upper)
-            and ci_lower > 0.35
-        )
-
         return {
             "setup_type": row.get("setup_type", setup_type),
             "regime": row.get("regime", regime),
             "direction": row.get("direction", direction),
-            "sector": sector,
-            "time_bucket": time_bucket,
-            "n": n,
-            "hit_rate": hit_rate,
-            "ci_lower": ci_lower,
-            "ci_upper": ci_upper,
-            "is_significant": is_significant,
+            "sector": sector, "time_bucket": time_bucket,
+            "n": n, "hit_rate": hit_rate,
+            "ci_lower": ci_lower, "ci_upper": ci_upper,
+            "is_significant": hit_rate > 0.5 and ci_lower > 0.5,
             "avg_net_return": row.get("avg_net_return", 0.0),
             "std_net_return": row.get("std_net_return", 0.0),
+            "tier": tier,
         }
