@@ -30,8 +30,8 @@ def test_global_fallback():
 
 
 def test_beta_binomial_posterior():
-    post = beta_binomial_posterior(k=10, n=20, alpha_prior=12, beta_prior=8)
-    assert 0.50 <= post["posterior_mean"] <= 0.60
+    post = beta_binomial_posterior(k=10, n=20, alpha_prior=6, beta_prior=6)
+    assert 0.45 <= post["posterior_mean"] <= 0.55
     assert "ci_lower" in post
 
 

@@ -1,6 +1,8 @@
 from typing import Optional
 import random
 
+import scipy.stats as stats
+
 from models.enums import SetupType, Regime, Direction
 
 
@@ -37,6 +39,30 @@ def benjamini_hochberg(p_values: list[float], alpha: float = 0.05) -> list[bool]
         if rank <= k:
             significant[idx] = True
     return significant
+
+
+def beta_binomial_posterior(k: int, n: int, alpha_prior: float = 6,
+                            beta_prior: float = 6, ci_level: float = 0.95) -> dict:
+    """Beta-Binomial conjugate update for hit rate.
+    Prior: Beta(6, 6) centered at 50% hit rate (agnostic).
+    Posterior: Beta(6 + k, 6 + n - k)"""
+    post_alpha = alpha_prior + k
+    post_beta = beta_prior + n - k
+    posterior_mean = post_alpha / (post_alpha + post_beta)
+    tail = (1 - ci_level) / 2
+    ci_lower = stats.beta.ppf(tail, post_alpha, post_beta)
+    ci_upper = stats.beta.ppf(1 - tail, post_alpha, post_beta)
+    return {
+        "posterior_mean": round(posterior_mean, 4),
+        "ci_lower": round(ci_lower, 4),
+        "ci_upper": round(ci_upper, 4),
+        "prior_alpha": alpha_prior,
+        "prior_beta": beta_prior,
+        "posterior_alpha": post_alpha,
+        "posterior_beta": post_beta,
+        "n_observed": n,
+        "k_observed": k,
+    }
 
 
 def bayesian_bootstrap(returns: list[float], n_bootstrap: int = 10000) -> dict:
