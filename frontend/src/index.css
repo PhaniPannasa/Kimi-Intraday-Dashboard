@@ -19,27 +19,35 @@
     --space-lg: clamp(1rem, 0.8rem + 1vw, 1.5rem);
     --space-xl: clamp(1.5rem, 1rem + 2.5vw, 2.5rem);
 
-    /* Dashboard color tokens (dark mode default) */
-    --bg-base: #0b0f19;
-    --bg-surface: #111827;
-    --bg-surface-raised: #1f2937;
-    --border-subtle: #374151;
-    --text-primary: #f3f4f6;
-    --text-secondary: #9ca3af;
-    --text-tertiary: #6b7280;
+    /* Dashboard color tokens (dark terminal aesthetic) */
+    --bg-base: #0a0b0d;
+    --bg-surface: #14161a;
+    --bg-surface-raised: #1c1f24;
+    --bg-surface-elev: #232730;
+    --border-subtle: #2a2e35;
+    --border-strong: #3a3f48;
+    --text-primary: #e6e8eb;
+    --text-secondary: #a4a8af;
+    --text-tertiary: #6b7079;
+    --text-faint: #4a4f57;
 
     /* Semantic trade colors */
     --trade-long: #10b981;
-    --trade-long-dim: #064e3b;
+    --trade-long-soft: rgba(16, 185, 129, 0.35);
+    --trade-long-dim: rgba(16, 185, 129, 0.15);
     --trade-short: #ef4444;
-    --trade-short-dim: #7f1d1d;
+    --trade-short-soft: rgba(239, 68, 68, 0.35);
+    --trade-short-dim: rgba(239, 68, 68, 0.15);
     --trade-neutral: #f59e0b;
-    --trade-neutral-dim: #78350f;
+    --trade-neutral-soft: rgba(245, 158, 11, 0.35);
+    --trade-neutral-dim: rgba(245, 158, 11, 0.15);
+    --accent: #5fa3ff;
+    --accent-soft: rgba(95, 163, 255, 0.35);
+    --accent-dim: rgba(95, 163, 255, 0.15);
 
-    /* Tier colors */
-    --tier-tradeable: #10b981;
-    --tier-constrained: #f59e0b;
-    --tier-research: #6b7280;
+    /* Font families */
+    --font-ui: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 
     /* Scrollbar */
     --scrollbar-thumb: #4b5563;
@@ -54,25 +62,25 @@
   body {
     background-color: var(--bg-base);
     color: var(--text-primary);
-    font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-family: var(--font-ui);
     line-height: 1.5;
     overflow-x: hidden;
   }
 
   /* Custom scrollbar for webkit */
   ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 8px;
+    height: 8px;
   }
   ::-webkit-scrollbar-track {
     background: var(--scrollbar-track);
   }
   ::-webkit-scrollbar-thumb {
-    background: var(--scrollbar-thumb);
-    border-radius: 3px;
+    background: var(--border-subtle);
+    border-radius: 4px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #6b7280;
+    background: var(--border-strong);
   }
 }
 
@@ -90,9 +98,74 @@
   .text-secondary { color: var(--text-secondary); }
   .text-tertiary { color: var(--text-tertiary); }
 
+  /* Font families */
+  .font-mono { font-family: var(--font-mono); }
+  .tabular-nums { font-variant-numeric: tabular-nums; }
+
   /* Touch targets */
   .touch-target {
     min-height: 44px;
     min-width: 44px;
   }
+}
+
+/* Animations */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.85); }
+}
+
+@keyframes layer-pulse {
+  0% { box-shadow: 0 0 0 0 var(--trade-long-soft); transform: scale(1); }
+  50% { box-shadow: 0 0 0 6px transparent; transform: scale(1.18); }
+  100% { box-shadow: 0 0 0 0 transparent; transform: scale(1); }
+}
+
+@keyframes flash-row {
+  0% { background-color: var(--accent-dim); }
+  100% { background-color: transparent; }
+}
+
+@keyframes flash-up {
+  0% { background-color: var(--trade-long-dim); }
+  100% { background-color: transparent; }
+}
+
+@keyframes flash-down {
+  0% { background-color: var(--trade-short-dim); }
+  100% { background-color: transparent; }
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.animate-pulse-dot { animation: pulse-dot 2s ease-in-out infinite; }
+.animate-layer-pulse { animation: layer-pulse 1.2s ease-out; }
+.animate-flash-row { animation: flash-row 1.4s ease-out; }
+.animate-flash-up { animation: flash-up 1.4s ease-out; }
+.animate-flash-down { animation: flash-down 1.4s ease-out; }
+.animate-toast-in { animation: toast-in 240ms ease-out; }
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.animate-spin { animation: spin 1s linear infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+tbody tr:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+tbody tr:focus:not(:focus-visible) {
+  outline: none;
 }

@@ -118,16 +118,15 @@ Kimi-Intraday-Dashboard/
 
 ## Port Assignments
 
-| Service | Container Port | Host Port | Status |
+| Service | Container Port | Host Port | Notes |
 |---|---|---|---|
-| FastAPI Engine | 8000 | **8084** | Available |
-| TimescaleDB | 5432 | **5433** | Available |
-| Redis | 6379 | **6380** | Available |
-| React Vite Dev | 5173 | **5174** | Available |
-| WebSocket | 8000 | **8084** | Upgrades from FastAPI port |
-| Caddy/Web | 80 | **8080** | Available |
+| TimescaleDB | 5432 | **8150** | reserved block (8150–8200) |
+| Redis | 6379 | **8160** | reserved block |
+| FastAPI engine | 8000 | **8170** | reserved block; WS upgrades on same port |
+| Caddy/Web | 80 | **8180** | reserved block |
+| Vite dev | — | **8190** | proxies `/api` and `/ws` → :8170 |
 
-**Note:** Existing services on 8000/8001 (python), 5432 (postgres), 6379 (docker redis), 5173/5180/5181 (node) are left untouched.
+**This app owns 8150–8200. Do not use:** 8000/8001/8083 (other python/java), 5432/15432 (other PG), 6379 (other Redis), 5173/5180 (other node), 5000/8765 (OpenAlgo).
 
 ---
 
@@ -165,7 +164,7 @@ services:
     restart: unless-stopped
     env_file: .env
     ports:
-      - "8084:8000"
+      - "8170:8000"
     volumes:
       - engine_data:/data
       - ./logs:/app/logs
@@ -191,7 +190,7 @@ services:
     volumes:
       - tsdb_data:/var/lib/postgresql/data
     ports:
-      - "5433:5432"
+      - "8150:5432"
 
   redis:
     image: redis:7-alpine
@@ -201,7 +200,7 @@ services:
     volumes:
       - redis_data:/data
     ports:
-      - "6380:6379"
+      - "8160:6379"
 
   web:
     build:
@@ -210,7 +209,7 @@ services:
     container_name: intraday-web
     restart: unless-stopped
     ports:
-      - "8080:80"
+      - "8180:80"
     depends_on:
       - engine
 
@@ -416,7 +415,7 @@ app.include_router(ws_router)
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8170, reload=True)
 ```
 
 - [ ] **Step 3: Create tests/conftest.py**
@@ -1016,7 +1015,7 @@ git commit -m "feat: add websocket manager with mock broadcasts"
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --port 5173 --host",
+    "dev": "vite --port 8190 --host",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test": "vitest"
@@ -1063,13 +1062,18 @@ export default defineConfig({
     })
   ],
   server: {
-    port: 5173,
+    port: 8190,
     host: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:8084',
+        target: 'http://localhost:8170',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, '')
+      },
+      '/ws': {
+        target: 'ws://localhost:8170',
+        ws: true,
+        changeOrigin: true,
       }
     }
   }
@@ -1378,7 +1382,7 @@ import { useEffect, useRef } from 'react';
 import { useMarketStore } from '@/stores/marketStore';
 import type { WSMessage } from '@/types/api';
 
-const WS_URL = 'ws://localhost:8084/ws/v1/stream';
+const WS_URL = 'ws://localhost:8170/ws/v1/stream';
 
 export function useWebSocket() {
   const ws = useRef<WebSocket | null>(null);
@@ -1424,7 +1428,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { MarketContextFrame } from '@/types/api';
 
 async function fetchMarketContext(): Promise<MarketContextFrame> {
-  const res = await fetch('http://localhost:8084/market/context');
+  const res = await fetch('/api/market/context');
   if (!res.ok) throw new Error('Failed to fetch market context');
   return res.json();
 }
@@ -1445,7 +1449,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { RankingEntry } from '@/types/api';
 
 async function fetchRankings(direction: 'long' | 'short'): Promise<RankingEntry[]> {
-  const res = await fetch(`http://localhost:8084/rankings/top25/${direction}`);
+  const res = await fetch(`/api/rankings/top25/${direction}`);
   if (!res.ok) throw new Error('Failed to fetch rankings');
   return res.json();
 }
@@ -3995,7 +3999,7 @@ git commit -m "feat: add chart panel, responsive layout, and E2E smoke tests"
 - ✅ REST routes and WebSocket messages use same models as frames.
 
 **4. Port consistency:**
-- ✅ 8084 (engine), 5433 (timescaledb), 6380 (redis), 5174 (vite dev), 8080 (web) documented and used.
+- ✅ 8170 (engine), 8150 (timescaledb), 8160 (redis), 8190 (vite dev), 8180 (web) documented and used.
 
 ---
 

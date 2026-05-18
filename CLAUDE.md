@@ -53,8 +53,8 @@ Run commands from the **project ROOT** (not a subdirectory).
 # Install deps (editable, with test extras)
 pip install -e "./engine[.test]"
 
-# Run dev server (auto-reload on :8000 inside, :8084 outside Docker)
-cd engine && uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+# Run dev server (auto-reload on :8000 inside, :8170 outside Docker)
+cd engine && uvicorn main:app --host 0.0.0.0 --port 8170 --reload
 
 # All tests (pytest.ini at root auto-discovers tests/)
 pytest
@@ -77,7 +77,7 @@ pytest tests/e2e/
 ```powershell
 cd frontend
 npm install
-npm run dev        # Vite on :5174, proxies /api → http://localhost:8084
+npm run dev        # Vite on :8190, proxies /api → http://localhost:8170
 npm run build      # tsc + vite build → dist/
 npm test           # vitest (jsdom, setup in src/test-setup.ts)
 ```
@@ -106,16 +106,32 @@ docker compose down
 Host ports are shifted because the dev machine already runs other services on
 the canonical ports. Use these when hitting the stack from the host:
 
-| Service        | Container | Host  | Why shifted                |
-|----------------|-----------|-------|----------------------------|
-| FastAPI engine | 8000      | 8084  | 8000/8001 used by other py |
-| TimescaleDB    | 5432      | 5433  | 5432 used by host postgres |
-| Redis          | 6379      | 6380  | 6379 used by other docker  |
-| Caddy / web    | 80        | 8080  | —                          |
-| Vite dev       | —         | 5174  | proxies `/api` → :8084     |
+| Service        | Container | Host  | Why                                  |
+|----------------|-----------|-------|--------------------------------------|
+| TimescaleDB    | 5432      | 8150  | dedicated 8150-8200 block for app    |
+| Redis          | 6379      | 8160  | dedicated 8150-8200 block for app    |
+| FastAPI engine | 8000      | 8170  | dedicated 8150-8200 block for app    |
+| Caddy / web    | 80        | 8180  | dedicated 8150-8200 block for app    |
+| Vite dev       | —         | 8190  | proxies `/api` → :8170               |
 
-The frontend WebSocket URL is hard-coded to `ws://localhost:8084/ws/v1/stream`
-in `frontend/src/hooks/useWebSocket.ts`.
+**Reserved set for THIS app:** the entire **8150–8200** block. Live
+assignments: `8150` (DB), `8160` (Redis), `8170` (engine + WebSocket),
+`8180` (Caddy/web), `8190` (Vite dev); the rest of the block is held for
+future services in this app.
+**Do NOT touch** ports owned by other projects on this dev machine — notably
+`5173` (Python-Demo-Trading), `5175` (legacy port — left untouched),
+`5180` (Stock-Strategy-App), `5432, 6379, 15432` (other databases on this machine),
+`5000, 8765` (OpenAlgo), `8000, 8001, 8083` (other python/java services).
+
+**Heads-up — naming collision:** the domain `intraday-edge-4zz.uk` and the
+Cloudflare Tunnel `intraday-edge` (UUID `f0a9d271-…`) belong to a *different*
+project — `C:\Users\phani\projects\Stock-Strategy-App\` — whose Vite runs on
+port 5180. Despite the similar name ("intraday"), it is not this repo. Do not
+re-point that tunnel to any port in this app's reserved set.
+
+The frontend WebSocket uses the relative path `/ws/v1/stream`
+(`frontend/src/hooks/useWebSocket.ts:5`); Vite's `/ws` proxy forwards it to
+`ws://localhost:8170`.
 
 ## Architecture
 
@@ -186,7 +202,7 @@ against the real contracts.
 ### Quick health check
 ```powershell
 # Check backend health
-curl http://localhost:8084/health
+curl http://localhost:8170/health
 
 # Check frontend builds
 cd frontend && npm run build
@@ -202,7 +218,7 @@ pytest tests/test_pipeline.py -v
 ```powershell
 # Terminal 1: Backend (requires .env with Upstox token)
 cd engine
-uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+uvicorn main:app --host 0.0.0.0 --port 8170 --reload
 
 # Terminal 2: Frontend
 cd frontend
@@ -212,7 +228,7 @@ npm run dev
 docker compose up -d
 ```
 
-Then open http://localhost:5174 in a browser. You should see:
+Then open http://localhost:8190 in a browser. You should see:
 - RegimeBanner with current market regime
 - Top 25 long/short tables with scores and factors
 - Pipeline status showing L1-L10 stages
@@ -273,7 +289,7 @@ encode constants, thresholds, and the "why" that the code does not.
 
 **Docker & DevOps**
 - ✅ docker-compose.yml with 4 services (engine, timescaledb, redis, caddy)
-- ✅ Port mappings: 8084 (engine), 5433 (DB), 6380 (redis), 5174 (Vite dev)
+- ✅ Port mappings: 8170 (engine), 8150 (DB), 8160 (redis), 8190 (Vite dev), 8180 (web)
 - ✅ .env.example template with required credentials
 
 ### ⚠️ Phase 1 Constraints (Honored)

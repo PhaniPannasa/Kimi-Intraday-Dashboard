@@ -22,6 +22,7 @@ export interface MarketContextFrame {
   volatility_qualifier: string;
   vix_band: VIXBand;
   vix_trajectory: string;
+  vix_value: number;
   time_bucket: string;
   event_flag: string | null;
   breadth: Breadth;
@@ -39,6 +40,7 @@ export interface RankingEntry {
   actionability_tier: ActionabilityTier;
   rank_movement: RankMovement;
   liquidity_quality: LiquidityQuality;
+  direction: Direction;
 }
 
 export interface ThesisCard {

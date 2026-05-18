@@ -31,7 +31,7 @@ This document specifies the complete technical architecture for the NSE Intraday
                                               ▼
 ┌─────────────────────────────────────────────────────────────┐
 │              FASTAPI ENGINE (Backend)                       │
-│         Port 8000 — Python + Uvicorn + APScheduler          │
+│         Port 8170 — Python + Uvicorn + APScheduler        │
 │                                                             │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐   │
 │  │  L1-L8      │  │  L9 Shadow  │  │  L10 Edge Lookup    │   │
@@ -707,7 +707,7 @@ services:
     restart: unless-stopped
     env_file: .env
     ports:
-      - "8000:8000"
+      - "8170:8000"
     volumes:
       - engine_data:/data          # Persistent token storage
       - ./logs:/app/logs
@@ -733,7 +733,7 @@ services:
     volumes:
       - tsdb_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "8150:5432"
 
   redis:
     image: redis:7-alpine
@@ -743,7 +743,7 @@ services:
     volumes:
       - redis_data:/data
     ports:
-      - "6379:6379"
+      - "8160:6379"
 
   web:
     build:
@@ -752,8 +752,8 @@ services:
     container_name: intraday-web
     restart: unless-stopped
     ports:
-      - "80:80"
-      - "443:443"
+      - "8180:80"
+      - "8181:443"
     volumes:
       - caddy_data:/data
       - caddy_config:/config
@@ -783,17 +783,20 @@ DATABASE_URL=postgresql+asyncpg://engine:${DB_PASSWORD}@timescaledb:5432/intrada
 # Cache
 REDIS_URL=redis://redis:6379/0
 
-# Alerts
+# External services (use host ports for local dev)
+UPSTOX_ANALYTICS_TOKEN=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...
+UPSTOX_API_KEY=your_api_key
 TELEGRAM_BOT_TOKEN=your_bot_token
 TELEGRAM_CHAT_ID=your_chat_id
 
-# Engine Config
+# Engine Config — use 8150–8200 block for all local bindings
 NIFTY_UNIVERSE_COUNT=100
 TOP_N=25
 SESSION_START=09:15
 SESSION_END=15:30
 FORCE_EXPIRE=15:15
 NIGHTLY_REBUILD=23:00
+# Local dev: engine on :8170, Vite dev on :8190 (proxy /api → :8170)
 ```
 
 ---

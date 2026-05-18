@@ -120,7 +120,7 @@ git commit -m "fix: add QueryClientProvider to main.tsx"
 ```ts
 proxy: {
   '/api': {
-    target: 'http://localhost:8084',
+    target: 'http://localhost:8170',
     changeOrigin: true,
     rewrite: (path) => path.replace(/^\/api/, ''),
   }
@@ -615,7 +615,7 @@ import { useEffect, useRef } from 'react';
 import { useMarketStore } from '@/stores/marketStore';
 import type { WSMessage } from '@/types/api';
 
-const WS_URL = 'ws://localhost:8084/ws/v1/stream';
+const WS_URL = 'ws://localhost:8170/ws/v1/stream';
 
 export function useWebSocket() {
   const ws = useRef<WebSocket | null>(null);

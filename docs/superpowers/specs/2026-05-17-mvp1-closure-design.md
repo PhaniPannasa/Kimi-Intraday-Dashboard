@@ -11,7 +11,7 @@
 
 ### Frontend (5 items)
 1. `main.tsx` — missing `QueryClientProvider` (React Query inactive)
-2. `useRankings.ts` & `useMarketContext.ts` — hardcoded `http://localhost:8084/...` instead of `/api` proxy
+2. `useRankings.ts` & `useMarketContext.ts` — hardcoded `http://localhost:8170/...` instead of `/api` proxy
 3. `useWebSocket.ts` — missing handlers for `L8_THESIS`, `L9_INVALIDATION`, `L10_EDGE`
 4. `ChartPanel.tsx` — missing entirely (Task 30 from plan)
 5. `index.html` — stale `/vite.svg` favicon link
@@ -35,7 +35,7 @@ Import `QueryClient` and `QueryClientProvider` from `@tanstack/react-query`. Ins
 Add to `vite.config.ts` under `server.proxy`:
 ```ts
 '/api': {
-  target: 'http://localhost:8084',
+  target: 'http://localhost:8170',
   changeOrigin: true,
   rewrite: (path) => path.replace(/^\/api/, ''),
 }
@@ -43,7 +43,7 @@ Add to `vite.config.ts` under `server.proxy`:
 
 Update `useRankings.ts` to fetch `/api/rankings/top25/${direction}`.
 Update `useMarketContext.ts` to fetch `/api/market/context`.
-Update `useWebSocket.ts` to connect to `ws://localhost:8084/ws/v1/stream` (WS is not proxied via /api).
+Update `useWebSocket.ts` to connect to `ws://localhost:8170/ws/v1/stream` (WS is not proxied via /api).
 
 ### 2.3 index.html — Remove Stale Favicon
 

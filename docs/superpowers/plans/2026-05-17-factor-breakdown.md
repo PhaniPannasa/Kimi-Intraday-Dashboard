@@ -297,13 +297,13 @@ async def pipeline_status():
 
 Run the dev server:
 ```bash
-cd engine && uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+cd engine && uvicorn main:app --host 0.0.0.0 --port 8170 --reload
 ```
 
 In another terminal:
 ```bash
-curl -s http://localhost:8000/api/v1/rankings/RELIANCE/factors | python -m json.tool | head -5
-curl -s http://localhost:8000/api/v1/pipeline/status | python -m json.tool | head -5
+curl -s http://localhost:8170/api/v1/rankings/RELIANCE/factors | python -m json.tool | head -5
+curl -s http://localhost:8170/api/v1/pipeline/status | python -m json.tool | head -5
 ```
 
 Expected: Valid JSON with no errors.

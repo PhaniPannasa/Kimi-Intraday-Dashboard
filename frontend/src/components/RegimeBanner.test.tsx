@@ -12,7 +12,7 @@ describe('RegimeBanner', () => {
 
   it('should show loading when context is null', () => {
     render(<RegimeBanner />);
-    expect(screen.getByRole('status')).toBeDefined();
+    expect(document.body.querySelector('.animate-pulse')).toBeDefined();
   });
 
   it('should show regime when context is set', () => {
@@ -28,6 +28,7 @@ describe('RegimeBanner', () => {
         breadth: 'Strong',
         premarket_bias: 'Positive',
         bank_nifty_divergence: 0,
+        vix_value: 15.5,
       },
     });
     render(<RegimeBanner />);

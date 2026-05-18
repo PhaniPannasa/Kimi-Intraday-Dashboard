@@ -782,16 +782,16 @@ Replace the `server` block in `frontend/vite.config.ts`:
 
 ```ts
   server: {
-    port: 5173,
+    port: 8190,
     host: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:8084',
+        target: 'http://localhost:8170',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
       '/ws': {
-        target: 'ws://localhost:8084',
+        target: 'ws://localhost:8170',
         ws: true,
         changeOrigin: true,
       },
@@ -1978,7 +1978,7 @@ app.include_router(ws_router)
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8170, reload=True)
 ```
 
 - [ ] **Step 2: Verify main.py imports**
@@ -2140,7 +2140,7 @@ Expected: All services (engine, timescaledb, redis) start without errors.
 - [ ] **Step 2: Verify health endpoint from container**
 
 ```bash
-curl -f http://localhost:8084/health
+curl -f http://localhost:8170/health
 ```
 Expected: Returns JSON with status "healthy".
 

@@ -24,13 +24,14 @@ describe('marketStore', () => {
       breadth: 'Strong' as const,
       premarket_bias: 'Positive',
       bank_nifty_divergence: 0,
+      vix_value: 15.5,
     };
     useMarketStore.getState().setContext(ctx);
     expect(useMarketStore.getState().context).toEqual(ctx);
   });
 
   it('should update rankings via setRankings', () => {
-    const long = [{ symbol: 'RELIANCE', instrument_key: 'NSE_EQ|INE002A01018', score: 84.5, setup_type: 1, confluence_score: 5, net_rr: 1.4, actionability_tier: 'Tradeable' as const, rank_movement: 'UP' as const, liquidity_quality: 'Excellent' as const }];
+    const long = [{ symbol: 'RELIANCE', instrument_key: 'NSE_EQ|INE002A01018', score: 84.5, setup_type: 1, confluence_score: 5, net_rr: 1.4, actionability_tier: 'Tradeable' as const, rank_movement: 'UP' as const, liquidity_quality: 'Excellent' as const, direction: 'LONG' as const }];
     const short: typeof long = [];
     useMarketStore.getState().setRankings(long, short);
     expect(useMarketStore.getState().longRankings).toEqual(long);

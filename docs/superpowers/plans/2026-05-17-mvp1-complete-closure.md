@@ -732,7 +732,7 @@ app.include_router(ws_router)
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8170, reload=True)
 ```
 
 - [x] **Step 3: Update scheduler tests**
@@ -1614,16 +1614,16 @@ Update `frontend/vite.config.ts` server section:
 
 ```ts
   server: {
-    port: 5173,
+    port: 8190,
     host: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:8084',
+        target: 'http://localhost:8170',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
       '/ws': {
-        target: 'ws://localhost:8084',
+        target: 'ws://localhost:8170',
         ws: true,
         changeOrigin: true,
       },

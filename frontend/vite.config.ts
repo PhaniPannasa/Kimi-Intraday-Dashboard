@@ -22,16 +22,16 @@ export default defineConfig({
     setupFiles: ['./src/test-setup.ts'],
   },
   server: {
-    port: 5174,
+    port: 8190,
     host: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:8084',
+        target: 'http://localhost:8170',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ''),
       },
       '/ws': {
-        target: 'ws://localhost:8084',
+        target: 'ws://localhost:8170',
         ws: true,
         changeOrigin: true,
       },

@@ -9,7 +9,7 @@ services:
     restart: unless-stopped
     env_file: .env
     ports:
-      - "8084:8000"
+      - "8170:8000"
     volumes:
       - engine_data:/data
       - ./logs:/app/logs
@@ -35,7 +35,7 @@ services:
     volumes:
       - tsdb_data:/var/lib/postgresql/data
     ports:
-      - "5433:5432"
+      - "8150:5432"
 
   redis:
     image: redis:7-alpine
@@ -45,7 +45,7 @@ services:
     volumes:
       - redis_data:/data
     ports:
-      - "6380:6379"
+      - "8160:6379"
 
   web:
     build:
@@ -54,7 +54,7 @@ services:
     container_name: intraday-web
     restart: unless-stopped
     ports:
-      - "8080:80"
+      - "8180:80"
     depends_on:
       - engine
 

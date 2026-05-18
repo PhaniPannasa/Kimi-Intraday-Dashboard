@@ -1,121 +1,174 @@
 import { useMarketStore } from '@/stores/marketStore';
 import { cn } from '@/lib/utils';
-import { DataAgeBadge } from './DataAgeBadge';
-
-function Badge({
-  children,
-  variant = 'neutral',
-}: {
-  children: React.ReactNode;
-  variant?: 'long' | 'short' | 'neutral' | 'warn';
-}) {
-  const variantStyles = {
-    long: 'bg-[var(--trade-long-dim)] text-[var(--trade-long)]',
-    short: 'bg-[var(--trade-short-dim)] text-[var(--trade-short)]',
-    neutral: 'bg-[var(--bg-surface-raised)] text-[var(--text-secondary)]',
-    warn: 'bg-[var(--trade-neutral-dim)] text-[var(--trade-neutral)]',
-  };
-  return (
-    <span
-      className={cn(
-        'inline-flex items-center rounded-md px-2 py-0.5 text-fluid-xs font-medium',
-        variantStyles[variant]
-      )}
-    >
-      {children}
-    </span>
-  );
-}
 
 export function RegimeBanner() {
   const ctx = useMarketStore((s) => s.context);
-  const wsConnected = useMarketStore((s) => s.wsConnected);
-  const ts = useMarketStore((s) => s.lastWSTimestamps['L1_CONTEXT']);
 
   if (!ctx) {
     return (
-      <div
-        role="status"
-        aria-label="Loading market context"
-        className="bg-surface rounded-lg border border-[var(--border-subtle)] p-[var(--space-md)] animate-pulse"
-      >
-        <div className="h-6 w-48 rounded bg-[var(--bg-surface-raised)]" />
+      <div className="flex h-12 items-center border-b border-[var(--border-subtle)] bg-[var(--bg-surface)] px-4 animate-pulse">
+        <div className="h-4 w-64 rounded bg-[var(--bg-surface-raised)]" />
       </div>
     );
   }
 
-  const regimeVariant =
+  const regimeColor =
     ctx.regime === 'Trending-Up'
-      ? 'long'
+      ? 'var(--trade-long)'
       : ctx.regime === 'Trending-Down'
-        ? 'short'
-        : 'warn';
+        ? 'var(--trade-short)'
+        : 'var(--trade-neutral)';
 
-  const vixVariant =
+  const vixChipClass =
     ctx.vix_band === 'Elevated'
-      ? 'warn'
+      ? 'bg-[var(--trade-neutral-dim)] text-[var(--trade-neutral)]'
       : ctx.vix_band === 'Compressed'
-        ? 'long'
-        : 'neutral';
+        ? 'bg-[var(--trade-long-dim)] text-[var(--trade-long)]'
+        : 'bg-[var(--bg-surface-raised)] text-[var(--text-secondary)]';
 
-  const breadthVariant =
+  const breadthChipClass =
     ctx.breadth === 'Strong'
-      ? 'long'
+      ? 'bg-[var(--trade-long-dim)] text-[var(--trade-long)]'
       : ctx.breadth === 'Weak'
-        ? 'short'
-        : 'neutral';
+        ? 'bg-[var(--trade-short-dim)] text-[var(--trade-short)]'
+        : 'bg-[var(--bg-surface-raised)] text-[var(--text-secondary)]';
+
+  const biasChipClass =
+    ctx.premarket_bias === 'Positive'
+      ? 'bg-[var(--trade-long-dim)] text-[var(--trade-long)]'
+      : ctx.premarket_bias === 'Negative'
+        ? 'bg-[var(--trade-short-dim)] text-[var(--trade-short)]'
+        : 'bg-[var(--bg-surface-raised)] text-[var(--text-secondary)]';
 
   return (
-    <div className="bg-surface rounded-lg border border-[var(--border-subtle)] p-[var(--space-sm)] md:p-[var(--space-md)]">
-      <div className="flex flex-wrap items-center gap-[var(--space-xs)] md:gap-[var(--space-sm)]">
-        {/* Regime — primary */}
-        <div className="flex items-center gap-2">
+    <div
+      className="flex flex-wrap items-center gap-3 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2.5 md:gap-4 md:px-4"
+    >
+      {/* Regime + confidence */}
+      <div className="flex items-center gap-2">
+        <span
+          className="inline-block h-2 w-2 rounded-full"
+          style={{
+            background: regimeColor,
+            boxShadow: `0 0 12px ${regimeColor}`,
+          }}
+        />
+        <div className="flex flex-col leading-tight">
+          <span className="text-[10px] uppercase tracking-wide text-[var(--text-tertiary)]">
+            L1 Regime
+          </span>
           <span
-            className={cn(
-              'inline-block h-2.5 w-2.5 rounded-full',
-              regimeVariant === 'long' && 'bg-[var(--trade-long)]',
-              regimeVariant === 'short' && 'bg-[var(--trade-short)]',
-              regimeVariant === 'warn' && 'bg-[var(--trade-neutral)]'
-            )}
-          />
-          <span className="text-fluid-lg font-bold">{ctx.regime}</span>
-        </div>
-
-        <div className="hidden h-4 w-px bg-[var(--border-subtle)] sm:block" />
-
-        {/* Volatility qualifier */}
-        <Badge variant={ctx.volatility_qualifier === 'Volatile' ? 'warn' : 'neutral'}>
-          {ctx.volatility_qualifier}
-        </Badge>
-
-        {/* VIX */}
-        <Badge variant={vixVariant}>VIX {ctx.vix_band}</Badge>
-
-        {/* Breadth */}
-        <Badge variant={breadthVariant}>Breadth {ctx.breadth}</Badge>
-
-        {/* Premarket */}
-        <Badge variant="neutral">Pre-market {ctx.premarket_bias}</Badge>
-
-        {/* Spacer */}
-        <div className="flex-1" />
-
-        {/* Time bucket + connection */}
-        <div className="flex w-full items-center justify-between gap-3 sm:w-auto sm:justify-start">
-          <span className="text-fluid-sm text-[var(--text-secondary)]">{ctx.time_bucket}</span>
-          <DataAgeBadge timestamp={ts} />
-          <span className="flex items-center gap-1.5 text-fluid-xs">
-            <span
-              className={cn(
-                'h-1.5 w-1.5 rounded-full',
-                wsConnected ? 'bg-[var(--trade-long)]' : 'bg-[var(--trade-short)]'
-              )}
-            />
-            <span className={wsConnected ? 'text-[var(--trade-long)]' : 'text-[var(--trade-short)]'}>
-              {wsConnected ? 'Live' : 'Offline'}
-            </span>
+            className="text-lg font-bold tracking-tight"
+            style={{ color: regimeColor }}
+          >
+            {ctx.regime}
           </span>
         </div>
+        <span className="font-mono text-[11px] text-[var(--text-tertiary)]">
+          {(ctx.regime_confidence * 100).toFixed(0)}%
+        </span>
+      </div>
+
+      <div className="h-8 w-px bg-[var(--border-subtle)]" />
+
+      {/* VIX */}
+      <div className="flex flex-col leading-tight">
+        <span className="text-[10px] uppercase tracking-wide text-[var(--text-tertiary)]">
+          India VIX
+        </span>
+        <div className="flex items-baseline gap-1.5">
+          <span className="font-mono text-base font-semibold tabular-nums">
+            {ctx.vix_value.toFixed(2)}
+          </span>
+          <span className={cn('rounded px-1.5 py-0.5 text-[10px] font-semibold', vixChipClass)}>
+            {ctx.vix_band}
+          </span>
+          <span className="text-[10px]">
+            {ctx.vix_trajectory === 'Rising' ? '↑' : '↓'}
+          </span>
+        </div>
+      </div>
+
+      <div className="h-8 w-px bg-[var(--border-subtle)]" />
+
+      {/* Breadth */}
+      <div className="flex flex-col leading-tight">
+        <span className="text-[10px] uppercase tracking-wide text-[var(--text-tertiary)]">
+          Breadth
+        </span>
+        <span className={cn('rounded px-1.5 py-0.5 text-[10px] font-semibold', breadthChipClass)}>
+          {ctx.breadth}
+        </span>
+      </div>
+
+      {/* Premarket bias - hidden on mobile */}
+      <div className="hidden items-center gap-3 lg:flex">
+        <div className="h-8 w-px bg-[var(--border-subtle)]" />
+        <div className="flex flex-col leading-tight">
+          <span className="text-[10px] uppercase tracking-wide text-[var(--text-tertiary)]">
+            Pre-market
+          </span>
+          <span className={cn('rounded px-1.5 py-0.5 text-[10px] font-semibold', biasChipClass)}>
+            {ctx.premarket_bias}
+          </span>
+        </div>
+      </div>
+
+      {/* BankNifty Divergence - hidden on mobile */}
+      {Math.abs(ctx.bank_nifty_divergence) > 0 && (
+        <div className="hidden items-center gap-3 lg:flex">
+          <div className="h-8 w-px bg-[var(--border-subtle)]" />
+          <div className="flex flex-col leading-tight">
+            <span className="text-[10px] uppercase tracking-wide text-[var(--text-tertiary)]">
+              BankNifty Δ
+            </span>
+            <span
+              className={cn(
+                'font-mono text-sm font-semibold tabular-nums',
+                ctx.bank_nifty_divergence > 0.2
+                  ? 'text-[var(--trade-long)]'
+                  : ctx.bank_nifty_divergence < -0.2
+                    ? 'text-[var(--trade-short)]'
+                    : 'text-[var(--text-primary)]'
+              )}
+            >
+              {ctx.bank_nifty_divergence >= 0 ? '+' : ''}
+              {ctx.bank_nifty_divergence.toFixed(2)}%
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Event flag */}
+      {ctx.event_flag && (
+        <>
+          <div className="h-8 w-px bg-[var(--border-subtle)]" />
+          <div
+            className="flex items-center gap-1.5 rounded px-2 py-1 text-[11px] font-semibold"
+            style={{
+              background: 'var(--trade-neutral-dim)',
+              color: 'var(--trade-neutral)',
+            }}
+          >
+            <svg width="11" height="11" viewBox="0 0 11 11">
+              <path d="M5.5 1L10 9H1z" fill="currentColor" />
+              <rect x="5" y="4" width="1" height="3" fill="var(--bg-surface)" />
+              <rect x="5" y="7.5" width="1" height="1" fill="var(--bg-surface)" />
+            </svg>
+            <span className="text-[10px] uppercase tracking-wide">Event</span>
+            <span>{ctx.event_flag}</span>
+          </div>
+        </>
+      )}
+
+      <div className="flex-1" />
+
+      {/* Session bucket */}
+      <div className="flex flex-col items-end leading-tight">
+        <span className="text-[10px] uppercase tracking-wide text-[var(--text-tertiary)]">
+          Session
+        </span>
+        <span className="text-sm font-semibold">{ctx.time_bucket}</span>
       </div>
     </div>
   );

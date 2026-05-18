@@ -306,16 +306,18 @@ App.tsx
 
 ## 10. Port Assignments
 
-| Service | Container Port | Host Port | Status |
-|---|---|---|---|
-| FastAPI Engine | 8000 | **8084** | Available (8000/8001/8083 taken) |
-| TimescaleDB | 5432 | **5433** | Available (5432/15432 taken) |
-| Redis | 6379 | **6380** | Available (6379 taken by Docker Redis) |
-| React Vite Dev | 5173 | **5174** | Available (5173/5180/5181 taken) |
-| WebSocket | 8000 | **8084** | Upgrades from same FastAPI port |
-| Visual Companion | — | 63394 | Already running (brainstorming) |
+This app owns the entire **8150–8200** block. Do not use any other ports for this app.
 
-**Rationale:** Existing services (postgres on 5432, Redis on 6379, python on 8000/8001, node on 5173/5180/5181) are left untouched. Docker Compose maps to alternative host ports for full isolation.
+| Service | Container Port | Host Port | Notes |
+|---|---|---|---|
+| TimescaleDB | 5432 | **8150** | reserved block |
+| Redis | 6379 | **8160** | reserved block |
+| FastAPI engine | 8000 | **8170** | WebSocket upgrades on same port; proxies /api → :8170 |
+| Caddy / web | 80 | **8180** | reserved block |
+| Vite dev | — | **8190** | proxies `/api` and `/ws` → :8170 |
+| WebSocket (dev) | — | **8190** | Vite dev server handles WS upgrade |
+
+**Do NOT use:** `8000`, `8001`, `8083` (other python/java), `5432/15432` (other Postgres), `6379` (other Redis), `5173/5180` (other node apps), `5000/8765` (OpenAlgo).
 
 ---
 
