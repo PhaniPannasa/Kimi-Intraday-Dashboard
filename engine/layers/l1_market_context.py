@@ -1,5 +1,6 @@
 import numpy as np
 import polars as pl
+from datetime import datetime, time
 from models.enums import Regime, VIXBand, Breadth
 from models.frames import MarketContextFrame
 
@@ -12,31 +13,51 @@ def compute_realized_vol(returns: pl.Series, window: int = 20) -> pl.Series:
     return returns.rolling_std(window) * np.sqrt(252)
 
 
-def classify_regime(nifty_df: pl.DataFrame) -> tuple:
-    if len(nifty_df) < 50:
-        return Regime.RANGE_BOUND.value, 0.5
+COLD_START_END = time(10, 45)
 
-    returns = nifty_df["close"].pct_change()
+
+def should_use_cold_start(current_time: time) -> bool:
+    return current_time < COLD_START_END
+
+
+def get_cold_start_ema(df_15m: pl.DataFrame) -> pl.Series:
+    span = min(9, len(df_15m))
+    if span < 2:
+        return df_15m["close"]
+    return compute_ema(df_15m["close"], span)
+
+
+def get_primary_ema(df_5m: pl.DataFrame) -> pl.Series:
+    return compute_ema(df_5m["close"], 50)
+
+
+def classify_regime(nifty_df: pl.DataFrame, df_15m: pl.DataFrame | None = None,
+                    use_cold_start: bool = False) -> tuple:
+    SLOPE_THRESHOLD = 0.0003
+    VOL_Z_THRESHOLD = 0.5
+
+    if use_cold_start and df_15m is not None and len(df_15m) >= 2:
+        ema_series = get_cold_start_ema(df_15m)
+        slope = ema_series.diff(1)
+    else:
+        if len(nifty_df) < 50:
+            return Regime.RANGE_BOUND.value, 0.5
+        ema_series = get_primary_ema(nifty_df)
+        slope = ema_series.diff(5)
+
+    returns = nifty_df["close"].pct_change() if len(nifty_df) >= 2 else pl.Series("", [0.0])
     vol = compute_realized_vol(returns, 20)
     vol_baseline = vol.rolling_mean(60 * 75)
-    vol_zscore = (vol - vol_baseline) / vol_baseline.rolling_std(60 * 75)
+    vol_z = (vol - vol_baseline) / vol_baseline.rolling_std(60 * 75)
 
-    ema50 = compute_ema(nifty_df["close"], 50)
-    slope = ema50.diff(5)
-
-    latest_vol_z = vol_zscore.tail(1).to_list()[0] or 0
+    latest_vol_z = vol_z.tail(1).to_list()[0] or 0
     latest_slope = slope.tail(1).to_list()[0] or 0
 
-    if latest_slope > 0 and latest_vol_z > 0.5:
-        return Regime.TRENDING_UP.value, 0.85
-    elif latest_slope < 0 and latest_vol_z > 0.5:
-        return Regime.TRENDING_DOWN.value, 0.85
-    elif latest_slope > 0:
-        return Regime.TRENDING_UP.value, 0.65
-    elif latest_slope < 0:
-        return Regime.TRENDING_DOWN.value, 0.65
-    else:
-        return Regime.RANGE_BOUND.value, 0.7
+    if abs(latest_slope) < SLOPE_THRESHOLD:
+        return Regime.RANGE_BOUND.value, 0.6
+    if latest_slope > 0:
+        return Regime.TRENDING_UP.value, 0.85 if latest_vol_z > VOL_Z_THRESHOLD else 0.65
+    return Regime.TRENDING_DOWN.value, 0.85 if latest_vol_z > VOL_Z_THRESHOLD else 0.65
 
 
 def classify_vix_band(vix_value: float, vix_history: list) -> VIXBand:
@@ -51,11 +72,46 @@ def classify_vix_band(vix_value: float, vix_history: list) -> VIXBand:
     return VIXBand.NORMAL
 
 
+def classify_volatility_qualifier(vol_z: float) -> str:
+    return "Volatile" if abs(vol_z) > 0.8 else "Normal"
+
+
+def classify_vix_trajectory(vix_history: list[float], window: int = 5) -> str:
+    if len(vix_history) < window:
+        return "Stable"
+    recent = vix_history[-window:]
+    if recent[-1] > recent[0] * 1.05:
+        return "Rising"
+    elif recent[-1] < recent[0] * 0.95:
+        return "Falling"
+    return "Stable"
+
+
+def get_time_bucket(current_time: time) -> str:
+    if current_time < time(9, 15):
+        return "Pre-Open"
+    elif current_time < time(9, 30):
+        return "Opening Shock"
+    elif current_time < time(10, 45):
+        return "Trend Establishment"
+    elif current_time < time(12, 0):
+        return "Mid-Morning"
+    elif current_time < time(13, 0):
+        return "Lunch"
+    elif current_time < time(14, 30):
+        return "Afternoon Recovery"
+    else:
+        return "Closing Hour"
+
+
 def compute_breadth(stock_data: dict) -> Breadth:
     above_vwap = 0
     advancers = 0
     decliners = 0
+    new_highs = 0
+    new_lows = 0
     total = len(stock_data)
+
     if total == 0:
         return Breadth.MIXED
 
@@ -63,18 +119,32 @@ def compute_breadth(stock_data: dict) -> Breadth:
         if len(df) == 0:
             continue
         latest = df.tail(1)
-        if latest["close"].to_list()[0] > latest["vwap"].to_list()[0]:
+        close_val = latest["close"].to_list()[0]
+        vwap_val = latest["vwap"].to_list()[0]
+
+        if close_val > vwap_val:
             above_vwap += 1
-        if len(df) > 1:
-            if df["close"].tail(1).to_list()[0] > df["close"].head(1).to_list()[0]:
-                advancers += 1
-            else:
-                decliners += 1
+
+        prev_close = latest["prev_close"].to_list()[0] if "prev_close" in latest.columns else df["close"].head(1).to_list()[0]
+        if close_val > prev_close:
+            advancers += 1
+        elif close_val < prev_close:
+            decliners += 1
+
+        session_high = df["close"].max()
+        session_low = df["close"].min()
+        if close_val >= session_high and len(df) > 1:
+            new_highs += 1
+        if close_val <= session_low and len(df) > 1:
+            new_lows += 1
 
     vwap_pct = above_vwap / total
-    ad_ratio = advancers / max(decliners, 1)
-    hl_ratio = advancers / total if total > 0 else 0.5
-    b = 0.5 * vwap_pct + 0.25 * ad_ratio + 0.25 * hl_ratio
+    total_ad = advancers + decliners
+    ad_norm = advancers / total_ad if total_ad > 0 else 0.5
+    total_hl = new_highs + new_lows
+    hl_norm = new_highs / total_hl if total_hl > 0 else 0.5
+
+    b = 0.5 * vwap_pct + 0.25 * ad_norm + 0.25 * hl_norm
 
     if b > 0.60:
         return Breadth.STRONG
@@ -85,21 +155,43 @@ def compute_breadth(stock_data: dict) -> Breadth:
 
 class L1MarketContext:
     def __init__(self):
-        self.vix_history = []
+        self.vix_history: list[float] = []
 
-    def compute(self, nifty_df: pl.DataFrame, vix_value: float, stock_data: dict) -> MarketContextFrame:
+    def compute(self, nifty_df: pl.DataFrame, vix_value: float,
+                stock_data: dict, df_15m: pl.DataFrame | None = None,
+                premarket_bias: str = "Neutral",
+                bank_nifty_divergence: float = 0.0,
+                event_flag: str | None = None,
+                current_time: time | None = None) -> MarketContextFrame:
         self.vix_history.append(vix_value)
-        regime, confidence = classify_regime(nifty_df)
+        if len(self.vix_history) > 90:
+            self.vix_history = self.vix_history[-90:]
+
+        now = current_time or datetime.now().time()
+        use_cold = should_use_cold_start(now)
+
+        regime, confidence = classify_regime(nifty_df, df_15m, use_cold)
         vix_band = classify_vix_band(vix_value, self.vix_history)
         breadth = compute_breadth(stock_data)
 
+        # Compute vol_z for volatility qualifier
+        returns = nifty_df["close"].pct_change() if len(nifty_df) >= 2 else pl.Series("", [0.0])
+        vol = compute_realized_vol(returns, 20) if len(nifty_df) >= 20 else pl.Series("", [0.0])
+        if len(nifty_df) >= 50:
+            vol_z_series = (vol - vol.rolling_mean(60 * 75)) / vol.rolling_std(60 * 75)
+            latest_vol_z = vol_z_series.tail(1).to_list()[0] or 0.0
+        else:
+            latest_vol_z = 0.0
+
         return MarketContextFrame(
             regime=regime,
-            regime_confidence=confidence,
-            volatility_qualifier="Normal",
+            regime_confidence=round(confidence, 2),
+            volatility_qualifier=classify_volatility_qualifier(latest_vol_z),
             vix_band=vix_band.value,
-            vix_trajectory="Stable",
-            time_bucket="Trend Establishment",
+            vix_trajectory=classify_vix_trajectory(self.vix_history),
+            time_bucket=get_time_bucket(now),
+            event_flag=event_flag,
             breadth=breadth.value,
-            premarket_bias="Neutral",
+            premarket_bias=premarket_bias,
+            bank_nifty_divergence=bank_nifty_divergence,
         )

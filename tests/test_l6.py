@@ -23,6 +23,7 @@ def test_rank_movement_stable():
 def test_ranking_top_n():
     l6 = L6Ranking(top_n=3)
     stocks = [{"symbol": f"S{i}", "score": 100 - i, "instrument_key": f"K{i}"} for i in range(10)]
-    result = l6.rank(stocks)
-    assert len(result) == 3
-    assert result[0].symbol == "S0"
+    rankings, metrics = l6.rank(stocks)
+    assert len(rankings) == 3
+    assert rankings[0].symbol == "S0"
+    assert "sector_concentration" in metrics

@@ -409,15 +409,16 @@ class PipelineOrchestrator:
             context = MarketContextFrame()
         self.latest_context = context
 
-        # 4. L6: rank
+        # 4. L6: rank (returns tuple[list, dict] with metrics)
         if scored:
-            rankings = self.l6.rank(scored)
+            rankings, ranking_metrics = self.l6.rank(scored)
             longs = [r for r in rankings if r.net_rr > 0]
             shorts = [r for r in rankings if r.net_rr <= 0]
             self.latest_long_rankings = longs
             self.latest_short_rankings = shorts
         else:
             rankings = []
+            ranking_metrics = {}
             longs = []
             shorts = []
 
