@@ -668,7 +668,8 @@ class PipelineOrchestrator:
 
         self.latest_theses = theses
 
-        # 6. L10: edge lookup
+        # 6. L10: populate from DB then edge lookup
+        await self.l10.populate_from_db()
         regime_str = context.regime if hasattr(context, "regime") else "Range-Bound"
         edge_events = []
         for st in [SetupType.ORB_15MIN, SetupType.VWAP_RECLAIM, SetupType.SUPERTREND_PULLBACK]:

@@ -1,6 +1,7 @@
 from datetime import datetime, timezone, time
 from typing import List
 
+from db.timescale import db as timescale_db
 from models.enums import ThesisState, SetupType
 
 
@@ -25,6 +26,36 @@ class L9ShadowLedger:
         self.theses: dict[str, dict] = {}
         self.active: dict[str, dict] = {}
         self.history: list[dict] = []
+        self._db = timescale_db
+
+    async def _persist_outcome(self, thesis: dict, exit_reason: str, exit_price: float):
+        """INSERT a row into thesis_outcomes hypertable."""
+        try:
+            await self._db.execute(
+                """
+                INSERT INTO thesis_outcomes
+                (thesis_id, symbol, setup_type, regime, direction, sector, time_bucket,
+                 entry_price, exit_price, exit_reason, mfe_pct, mae_pct,
+                 net_return, r_multiple, created_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW())
+                """,
+                thesis.get("thesis_id"),
+                thesis.get("symbol"),
+                thesis.get("setup_type", 1),
+                thesis.get("regime", "Range-Bound"),
+                thesis.get("direction", "LONG"),
+                thesis.get("sector", "Bank"),
+                thesis.get("time_bucket", "Trend Establishment"),
+                thesis.get("entry_price"),
+                exit_price,
+                exit_reason,
+                thesis.get("mfe_pct", 0.0),
+                thesis.get("mae_pct", 0.0),
+                thesis.get("net_return", 0.0),
+                thesis.get("r_multiple", 0.0),
+            )
+        except Exception:
+            pass
 
     async def on_create(self, thesis: dict):
         thesis["state"] = ThesisState.CREATED.value
@@ -48,7 +79,7 @@ class L9ShadowLedger:
         t["mae_pct"] = 0.0
         self.active[thesis_id] = t
 
-    def on_pending_expiry(self, current_time_str: str) -> List[dict]:
+    async def on_pending_expiry(self, current_time_str: str) -> List[dict]:
         h, m = map(int, current_time_str.split(":"))
         now = time(h, m)
         expired = []
@@ -63,6 +94,8 @@ class L9ShadowLedger:
                 expired.append(t)
                 del self.theses[tid]
                 self.history.append(t)
+        for t in expired:
+            await self._persist_outcome(t, "EXPIRED", t.get("exit_price", 0.0))
         return expired
 
     def should_extend(self, setup_type: int, current_time_str: str,
@@ -86,6 +119,7 @@ class L9ShadowLedger:
                 terminal.append(hit)
                 del self.active[tid]
                 self.history.append(hit)
+                await self._persist_outcome(hit, hit["state"], hit["exit_price"])
         return terminal
 
     def _check_exits(self, t: dict, price: float) -> dict | None:
@@ -152,6 +186,8 @@ class L9ShadowLedger:
             expired.append(t)
             self.history.append(t)
         self.theses.clear()
+        for t in expired:
+            await self._persist_outcome(t, "FORCE_EXPIRED", t.get("exit_price", 0.0))
         return expired
 
     # Backward-compatible method for old on_trigger signature

@@ -106,6 +106,27 @@ class L10EdgeLookup:
             )
             self.edge_store[key] = row
 
+    async def populate_from_db(self) -> None:
+        """Populate edge store from TimescaleDB thesis_outcomes hypertable."""
+        from db.timescale import db as timescale_db
+
+        try:
+            rows = await timescale_db.fetch(
+                """
+                SELECT
+                    setup_type, regime, direction, sector, time_bucket,
+                    COUNT(*) as n,
+                    AVG(CASE WHEN net_return > 0 THEN 1.0 ELSE 0.0 END) as hit_rate,
+                    AVG(net_return) as avg_net_return,
+                    STDDEV(net_return) as std_net_return
+                FROM thesis_outcomes
+                GROUP BY setup_type, regime, direction, sector, time_bucket
+                """
+            )
+            self.populate([dict(r) for r in rows])
+        except Exception:
+            pass
+
     def _check_tier(self, row: dict, tier: int) -> bool:
         config = TIER_CONFIG[tier]
         n = row.get("n", 0)
