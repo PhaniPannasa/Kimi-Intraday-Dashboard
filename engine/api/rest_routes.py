@@ -4,8 +4,11 @@ from typing import Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, HTTPException, Query, Response
 
+from core.auth.token_manager import token_manager
 from core.data.redis_cache import cache
 from core.pipeline import pipeline
+from core.scheduler.market_scheduler import scheduler
+from db.timescale import db as timescale_db
 from models.enums import (
     ActionabilityTier,
     Breadth,
@@ -592,10 +595,10 @@ async def health(response: Response):
         top25_long_count=long_count,
         top25_short_count=short_count,
         active_theses=thesis_count,
-        token_expires_in_days=365,
-        db_connected=True,
-        redis_connected=True,
-        scheduler_jobs=12,
+        token_expires_in_days=token_manager.days_until_expiry(),
+        db_connected=await timescale_db.ping(),
+        redis_connected=await cache.ping(),
+        scheduler_jobs=scheduler.get_job_count(),
     )
 
 
@@ -982,5 +985,5 @@ async def telemetry_data_sources():
         pipeline=pipeline,
         session=market_session,
         ws_connections=len(ws_mgr._connections),
-        scheduler_running=True,  # Phase B: read real APScheduler state
+        scheduler_running=scheduler.scheduler.running,
     )

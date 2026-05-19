@@ -32,6 +32,15 @@ class TimescaleDB:
         async with self.pool.acquire() as conn:
             return await conn.fetchrow(query, *args)
 
+    async def ping(self) -> bool:
+        """Return True if DB is reachable."""
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.execute("SELECT 1")
+            return True
+        except Exception:
+            return False
+
     async def run_migrations(self):
         mig_dir = pathlib.Path(__file__).parent / "migrations"
         for mig_file in sorted(mig_dir.glob("*.sql")):

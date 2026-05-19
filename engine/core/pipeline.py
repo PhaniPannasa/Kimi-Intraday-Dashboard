@@ -402,6 +402,10 @@ class PipelineOrchestrator:
         self.latest_short_rankings: list = []
         self.latest_theses: list[ThesisCard] = []
 
+        # Telemetry realness tracking (updated each cycle)
+        self._l2_flags_populated: bool = False
+        self._sector_rs_real: bool = False
+
     # ------------------------------------------------------------------
     # Entry point
     # ------------------------------------------------------------------
@@ -510,6 +514,7 @@ class PipelineOrchestrator:
                 }
         except Exception:
             l2_flags = {}
+        self._l2_flags_populated = len(l2_flags) > 0
 
         # 1. Fetch Nifty context data
         nifty_df = None
@@ -551,6 +556,7 @@ class PipelineOrchestrator:
                     real_sector_data[entry["sector"]] = entry
         except Exception:
             pass
+        self._sector_rs_real = len(real_sector_data) > 0
 
         # 2. Per-symbol: L3 -> signals -> L5 score
         scored: list[dict] = []
