@@ -2,22 +2,19 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { apiFetch } from '@/lib/apiFetch';
 import { useMarketStore } from '@/stores/marketStore';
-import type { SymbolFactorBreakdown } from '@/types/api';
+import type { CandleResponse } from '@/types/api';
 
-export function useFactorBreakdown(symbol: string | null) {
+export function useCandles(symbol: string) {
   const setSource = useMarketStore((s) => s.setSource);
-
   const query = useQuery({
-    queryKey: ['factors', symbol],
-    queryFn: async () => apiFetch<SymbolFactorBreakdown>(`/api/rankings/${encodeURIComponent(symbol!)}/factors`),
+    queryKey: ['candles', symbol],
+    queryFn: async () => apiFetch<CandleResponse>(`/api/market/candles/${symbol}`),
+    refetchInterval: 60000,
     enabled: !!symbol,
-    staleTime: 60000,
   });
-
   useEffect(() => {
-    if (query.data) setSource('rankings/factors', query.data.source);
+    if (query.data) setSource('market/candles', query.data.source);
   }, [query.data, setSource]);
-
   return {
     data: query.data?.data,
     source: query.data?.source,

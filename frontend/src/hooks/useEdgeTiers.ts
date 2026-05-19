@@ -2,22 +2,19 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { apiFetch } from '@/lib/apiFetch';
 import { useMarketStore } from '@/stores/marketStore';
-import type { PipelineStatusResponse } from '@/types/api';
 
-export function usePipelineStatus() {
+type EdgeTiersResponse = { tiers: any[]; promotions: number[] };
+
+export function useEdgeTiers() {
   const setSource = useMarketStore((s) => s.setSource);
-
   const query = useQuery({
-    queryKey: ['pipeline', 'status'],
-    queryFn: async () => apiFetch<PipelineStatusResponse>('/api/pipeline/status'),
-    refetchInterval: 15000,
-    staleTime: 10000,
+    queryKey: ['edgeTiers'],
+    queryFn: async () => apiFetch<EdgeTiersResponse>('/api/edge/tiers'),
+    refetchInterval: 60000,
   });
-
   useEffect(() => {
-    if (query.data) setSource('pipeline/status', query.data.source);
+    if (query.data) setSource('edge/tiers', query.data.source);
   }, [query.data, setSource]);
-
   return {
     data: query.data?.data,
     source: query.data?.source,

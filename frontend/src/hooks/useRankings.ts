@@ -1,16 +1,26 @@
 import { useQuery } from '@tanstack/react-query';
+import { useEffect } from 'react';
+import { apiFetch } from '@/lib/apiFetch';
+import { useMarketStore } from '@/stores/marketStore';
 import type { RankingEntry } from '@/types/api';
 
-async function fetchRankings(direction: 'long' | 'short'): Promise<RankingEntry[]> {
-  const res = await fetch(`/api/rankings/top25/${direction}`);
-  if (!res.ok) throw new Error('Failed to fetch rankings');
-  return res.json();
-}
-
 export function useRankings(direction: 'long' | 'short') {
-  return useQuery({
+  const setSource = useMarketStore((s) => s.setSource);
+
+  const query = useQuery({
     queryKey: ['rankings', direction],
-    queryFn: () => fetchRankings(direction),
+    queryFn: async () => apiFetch<RankingEntry[]>(`/api/rankings/top25/${direction}`),
     refetchInterval: 60000,
   });
+
+  useEffect(() => {
+    if (query.data) setSource(`rankings/top25/${direction}`, query.data.source);
+  }, [query.data, setSource, direction]);
+
+  return {
+    data: query.data?.data ?? [],
+    source: query.data?.source,
+    isLoading: query.isLoading,
+    isError: query.isError,
+  };
 }

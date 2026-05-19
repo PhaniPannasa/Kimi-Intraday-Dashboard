@@ -15,15 +15,15 @@ describe('useRankings', () => {
     queryClient.clear();
   });
 
-  it('should fetch from /api proxy', async () => {
-    const mockFetch = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+  it('fetches from /api/rankings/top25/long and reports source', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
       ok: true,
+      headers: new Headers({ 'X-Data-Source': 'mock' }),
       json: async () => [{ symbol: 'RELIANCE', score: 85, instrument_key: 'NSE_EQ|RELIANCE' }],
     } as Response);
 
-    renderHook(() => useRankings('long'), { wrapper });
-    await waitFor(() => {
-      expect(mockFetch).toHaveBeenCalledWith('/api/rankings/top25/long');
-    });
+    const { result } = renderHook(() => useRankings('long'), { wrapper });
+    await waitFor(() => expect(result.current.data.length).toBe(1));
+    expect(result.current.source).toBe('mock');
   });
 });

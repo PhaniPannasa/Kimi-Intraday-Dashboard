@@ -2,22 +2,19 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { apiFetch } from '@/lib/apiFetch';
 import { useMarketStore } from '@/stores/marketStore';
-import type { PipelineStatusResponse } from '@/types/api';
 
-export function usePipelineStatus() {
+type FunnelCountsResponse = Record<string, { in_count: number; out_count: number; layer: string }>;
+
+export function useFunnelCounts() {
   const setSource = useMarketStore((s) => s.setSource);
-
   const query = useQuery({
-    queryKey: ['pipeline', 'status'],
-    queryFn: async () => apiFetch<PipelineStatusResponse>('/api/pipeline/status'),
-    refetchInterval: 15000,
-    staleTime: 10000,
+    queryKey: ['funnelCounts'],
+    queryFn: async () => apiFetch<FunnelCountsResponse>('/api/funnel/counts'),
+    refetchInterval: 30000,
   });
-
   useEffect(() => {
-    if (query.data) setSource('pipeline/status', query.data.source);
+    if (query.data) setSource('funnel/counts', query.data.source);
   }, [query.data, setSource]);
-
   return {
     data: query.data?.data,
     source: query.data?.source,

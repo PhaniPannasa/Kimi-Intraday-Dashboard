@@ -1,16 +1,27 @@
 import { useQuery } from '@tanstack/react-query';
+import { useEffect } from 'react';
+import { apiFetch } from '@/lib/apiFetch';
+import { useMarketStore } from '@/stores/marketStore';
 import type { MarketContextFrame } from '@/types/api';
 
-async function fetchMarketContext(): Promise<MarketContextFrame> {
-  const res = await fetch('/api/market/context');
-  if (!res.ok) throw new Error('Failed to fetch market context');
-  return res.json();
-}
-
 export function useMarketContext() {
-  return useQuery({
+  const setSource = useMarketStore((s) => s.setSource);
+
+  const query = useQuery({
     queryKey: ['marketContext'],
-    queryFn: fetchMarketContext,
+    queryFn: async () => apiFetch<MarketContextFrame>('/api/market/context'),
     refetchInterval: 300000,
   });
+
+  useEffect(() => {
+    if (query.data) setSource('market/context', query.data.source);
+  }, [query.data, setSource]);
+
+  return {
+    data: query.data?.data,
+    source: query.data?.source,
+    isLoading: query.isLoading,
+    isError: query.isError,
+    error: query.error,
+  };
 }

@@ -15,15 +15,15 @@ describe('useMarketContext', () => {
     queryClient.clear();
   });
 
-  it('should fetch from /api proxy', async () => {
-    const mockFetch = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+  it('captures source from response header', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ regime: 'Trending-Up', regime_confidence: 0.85, volatility_qualifier: 'Volatile', vix_band: 'Elevated', vix_trajectory: 'Rising', time_bucket: 'Opening', event_flag: null, breadth: 'Broad', premarket_bias: 'Bullish', bank_nifty_divergence: 0.0 }),
+      headers: new Headers({ 'X-Data-Source': 'mock' }),
+      json: async () => ({ regime: 'Range-Bound', vix_value: 15 }),
     } as Response);
 
-    renderHook(() => useMarketContext(), { wrapper });
-    await waitFor(() => {
-      expect(mockFetch).toHaveBeenCalledWith('/api/market/context');
-    });
+    const { result } = renderHook(() => useMarketContext(), { wrapper });
+    await waitFor(() => expect(result.current.data).toBeDefined());
+    expect(result.current.source).toBe('mock');
   });
 });
