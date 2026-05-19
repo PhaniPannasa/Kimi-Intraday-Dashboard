@@ -967,3 +967,20 @@ async def market_candles(symbol: str, response: Response, interval: str = Query(
     candles = _gen_candles(rng, base_price, count)
     overlays = _gen_overlays(rng, candles, direction=Direction.LONG if rng() > 0.5 else Direction.SHORT)
     return CandleResponse(symbol=symbol, interval=interval, candles=candles, overlays=overlays)
+
+
+@router.get("/telemetry/data-sources")
+async def telemetry_data_sources():
+    """One-shot snapshot of pipeline truth — which endpoints serve real data,
+    current market-session phase, last bar timestamp, symbols feeding, and
+    per-layer realness flags. Polled by the frontend DataSourceDebugPanel."""
+    from api.websocket_manager import manager as ws_mgr
+    from core.session.market_session import session as market_session
+    from core.telemetry import snapshot
+
+    return snapshot(
+        pipeline=pipeline,
+        session=market_session,
+        ws_connections=len(ws_mgr._connections),
+        scheduler_running=True,  # Phase B: read real APScheduler state
+    )
