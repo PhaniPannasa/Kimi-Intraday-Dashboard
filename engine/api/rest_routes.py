@@ -645,7 +645,28 @@ async def rankings(direction: str, response: Response):
     )
     if live:
         response.headers["X-Data-Source"] = "pipeline"
-        return live[:25]
+        enriched = []
+        for entry in live[:25]:
+            # Enrich from pipeline state
+            try:
+                bars = pipeline.aggregator.get_bars(entry.symbol, 20)
+                if len(bars) >= 1:
+                    entry.price = float(bars["close"].to_numpy()[-1])
+                    if len(bars) >= 2:
+                        prev_close = float(bars["close"].to_numpy()[-2])
+                        entry.change_pct = round((entry.price - prev_close) / prev_close * 100, 2)
+                    entry.sparkline = [float(x) for x in bars["close"].to_numpy()[-20:].tolist()]
+                # Edge tier from L10
+                regime_str = pipeline.latest_context.regime if pipeline.latest_context else "Range-Bound"
+                edge = pipeline.l10.lookup(
+                    SetupType(entry.setup_type), Regime(regime_str),
+                    Direction(entry.direction) if entry.direction else Direction.LONG,
+                )
+                entry.edge_tier = edge.get("tier", 0)
+            except Exception:
+                pass
+            enriched.append(entry)
+        return enriched
 
     response.headers["X-Data-Source"] = "mock"
     cycle = _next_cycle()
@@ -760,7 +781,29 @@ async def get_thesis_outcome(thesis_id: str):
 
 @router.get("/edge/tiers")
 async def edge_tiers(response: Response):
-    response.headers["X-Data-Source"] = "mock"  # always mock pre-Phase-B
+    if pipeline.l10.edge_store:
+        response.headers["X-Data-Source"] = "pipeline"
+        tiers = []
+        for key, row in pipeline.l10.edge_store.items():
+            if row.get("n", 0) > 0:
+                tiers.append({
+                    "tier_id": key[0] or 0,
+                    "setup_type": key[0] or 0,
+                    "regime": key[1] or "Range-Bound",
+                    "direction": key[2] or "LONG",
+                    "sector": key[3],
+                    "time_bucket": key[4],
+                    "n": row.get("n", 0),
+                    "hit_rate": row.get("hit_rate", 0.0),
+                    "ci_lower": row.get("ci_lower", 0.0),
+                    "ci_upper": row.get("ci_upper", 0.0),
+                    "is_significant": row.get("is_significant", False),
+                    "avg_net_return": row.get("avg_net_return", 0.0),
+                    "std_net_return": row.get("std_net_return", 0.0),
+                })
+        return tiers
+
+    response.headers["X-Data-Source"] = "mock"
     cycle = _next_cycle()
     tiers = []
     for tid in range(1, 7):
@@ -840,6 +883,7 @@ async def pipeline_status(response: Response):
         cached = None
     if cached:
         response.headers["X-Data-Source"] = "pipeline"
+        cached["cycle_number"] = pipeline._cycle_number
         return PipelineStatusResponse(**cached)
 
     response.headers["X-Data-Source"] = "mock"
@@ -915,6 +959,27 @@ async def activity_events(response: Response, since: int = Query(0), limit: int 
 
 @router.get("/monitor/active-theses", response_model=ActiveThesesResponse)
 async def active_theses(response: Response):
+    if pipeline.l9.active:
+        response.headers["X-Data-Source"] = "pipeline"
+        entries = []
+        for thesis_id, t in pipeline.l9.active.items():
+            entries.append(ActiveThesisEntry(
+                thesis_id=thesis_id,
+                symbol=t.get("symbol", ""),
+                direction=Direction(t.get("direction", "LONG")),
+                setup_label=f"Setup {t.get('setup_type', 1)}",
+                state=t.get("state", "PENDING"),
+                trigger=t.get("trigger", 0),
+                t1=t.get("t1", 0),
+                t2=t.get("t2", 0),
+                net_rr=t.get("net_rr", 0),
+                mfe_R=float(t.get("mfe_pct", 0)) / 100.0 if t.get("mfe_pct") else 0.0,
+                mae_R=float(t.get("mae_pct", 0)) / 100.0 if t.get("mae_pct") else 0.0,
+                entry_price=t.get("entry_price"),
+                current_price=t.get("current_price"),
+            ))
+        return ActiveThesesResponse(theses=entries)
+
     if pipeline.latest_theses:
         response.headers["X-Data-Source"] = "pipeline"
         entries = [
@@ -943,33 +1008,25 @@ async def active_theses(response: Response):
     return ActiveThesesResponse(theses=theses)
 
 
-@router.get("/market/candles/{symbol}", response_model=CandleResponse)
-async def market_candles(symbol: str, response: Response, interval: str = Query("1m"), count: int = Query(60, ge=10, le=200)):
-    if symbol not in SYMBOL_DATA:
+@router.get("/market/candles/{symbol}")
+async def market_candles(
+    symbol: str,
+    interval: str = Query("1minute"),
+    limit: int = Query(100, ge=1, le=500),
+):
+    if symbol not in SYMBOL_DATA and symbol not in pipeline.symbol_map:
         raise HTTPException(status_code=404, detail=f"Unknown symbol: {symbol}")
-
-    try:
-        bars = pipeline.aggregator.get_bars(symbol, n=count)
-        if len(bars) > 0:
-            response.headers["X-Data-Source"] = "pipeline"
-            candles = [
-                CandleEntry(o=float(row["open"]), h=float(row["high"]),
-                            l=float(row["low"]), c=float(row["close"]))
-                for row in bars.to_dicts()
-            ]
-            return CandleResponse(symbol=symbol, interval=interval, candles=candles, overlays=None)
-    except Exception:
-        pass
-
-    response.headers["X-Data-Source"] = "mock"
-    cycle = _next_cycle()
-    base_price = SYMBOL_DATA[symbol]["base_price"]
-    rng = _make_rng(cycle * 65537 + hash(symbol) % 100000)
-    if interval != "1m":
-        rng()
-    candles = _gen_candles(rng, base_price, count)
-    overlays = _gen_overlays(rng, candles, direction=Direction.LONG if rng() > 0.5 else Direction.SHORT)
-    return CandleResponse(symbol=symbol, interval=interval, candles=candles, overlays=overlays)
+    rows = await timescale_db.fetch(
+        "SELECT ts, open, high, low, close, volume FROM market_bars WHERE instrument_key = $1 AND timeframe = $2 ORDER BY ts DESC LIMIT $3",
+        f"NSE_EQ|{symbol}", interval, limit,
+    )
+    candles = [
+        {"o": float(r["open"]), "h": float(r["high"]),
+         "l": float(r["low"]), "c": float(r["close"])}
+        for r in rows
+    ]
+    candles.reverse()
+    return {"symbol": symbol, "interval": interval, "candles": candles, "overlays": None}
 
 
 @router.get("/telemetry/data-sources")

@@ -402,6 +402,9 @@ class PipelineOrchestrator:
         self.latest_short_rankings: list = []
         self.latest_theses: list[ThesisCard] = []
 
+        # Cycle number for funnel / activity / status
+        self._cycle_number: int = 0
+
         # Telemetry realness tracking (updated each cycle)
         self._l2_flags_populated: bool = False
         self._sector_rs_real: bool = False
@@ -499,6 +502,7 @@ class PipelineOrchestrator:
 
     async def _run_live_cycle(self):
         now = datetime.now(timezone.utc)
+        self._cycle_number += 1
 
         # L2: Fetch NSE flags once per cycle (cached for all symbols)
         l2_flags: dict[str, dict] = {}
@@ -613,8 +617,44 @@ class PipelineOrchestrator:
                 vix_value = float(vix_ltp)
         except Exception:
             pass  # Keep fallback value on fetch failure
+
+        # Bank Nifty divergence
+        bank_nifty_divergence = 0.0
+        try:
+            bn_df = None
+            bn_resp = None
+            try:
+                bn_resp = await self.upstox_rest.get_historical_candle(
+                    "NSE_INDEX|Nifty Bank", "5minute",
+                )
+                bn_df = self._candle_json_to_df(bn_resp)
+            except Exception:
+                pass
+            if nifty_df is not None and bn_df is not None and len(nifty_df) >= 5 and len(bn_df) >= 5:
+                nifty_close = nifty_df["close"].to_numpy()
+                bn_close = bn_df["close"].to_numpy()
+                nifty_ret = float((nifty_close[-1] - nifty_close[-5]) / nifty_close[-5])
+                bn_ret = float((bn_close[-1] - bn_close[-5]) / bn_close[-5])
+                bank_nifty_divergence = round(bn_ret - nifty_ret, 4)
+        except Exception:
+            pass
+
+        # event_flag from earnings
+        event_flag = None
+        try:
+            earnings_today = [sym for sym, flags in l2_flags.items()
+                            if flags.get("earnings") == "Earnings"]
+            if earnings_today:
+                event_flag = f"Earnings: {', '.join(earnings_today[:5])}"
+        except Exception:
+            pass
+
         if nifty_df is not None and len(nifty_df) > 0 and stock_data:
-            context = self.l1.compute(nifty_df, vix_value, stock_data)
+            context = self.l1.compute(
+                nifty_df, vix_value, stock_data,
+                event_flag=event_flag,
+                bank_nifty_divergence=bank_nifty_divergence,
+            )
         else:
             context = MarketContextFrame()
         self.latest_context = context
@@ -631,6 +671,27 @@ class PipelineOrchestrator:
             ranking_metrics = {}
             longs = []
             shorts = []
+
+        # Push activity events to Redis
+        try:
+            cycle_num = self._cycle_number
+            for r in rankings:
+                movement_str = r.rank_movement.value if hasattr(r.rank_movement, 'value') else str(r.rank_movement)
+                if movement_str in ("NEW", "UP", "DOWN"):
+                    event = {
+                        "id": f"{now.timestamp()}-{r.symbol}",
+                        "ts": now.isoformat(),
+                        "type": movement_str,
+                        "symbol": r.symbol,
+                        "direction": "LONG" if r.net_rr > 0 else "SHORT",
+                        "text": f"{r.symbol} {movement_str} (score {r.score:.1f})",
+                        "detail": f"Rank movement, score {r.score:.1f}",
+                        "cycle": cycle_num,
+                    }
+                    await self.cache.client.lpush("pipeline:activity", json.dumps(event))
+            await self.cache.client.ltrim("pipeline:activity", 0, 199)
+        except Exception:
+            pass
 
         # 5. L8: assemble theses for stocks with score >= 40
         theses: list[ThesisCard] = []
@@ -689,6 +750,24 @@ class PipelineOrchestrator:
                         "promotion": "PROMOTED" if edge["n"] >= 30 else "WATCH",
                     })
 
+        # Cache funnel counts to Redis
+        try:
+            funnel = {
+                "L1": {"in": 1, "out": 1},
+                "L2": {"in": len(self.symbol_map), "out": len(scored)},
+                "L3": {"in": len(scored), "out": len(scored)},
+                "L4": {"in": len(scored), "out": len(scored)},
+                "L5": {"in": len(scored), "out": len(scored)},
+                "L6": {"in": len(scored), "out": len(rankings)},
+                "L7": {"in": len(rankings), "out": len(rankings)},
+                "L8": {"in": len(rankings), "out": len(theses)},
+                "L9": {"in": len(theses), "out": len(self.l9.active)},
+                "L10": {"in": len(theses), "out": len(theses)},
+            }
+            await self.cache.set("pipeline:funnel_counts", funnel)
+        except Exception:
+            pass
+
         # 7. Broadcast all
         await ws_manager.broadcast({
             "type": "L1_CONTEXT",
@@ -715,6 +794,22 @@ class PipelineOrchestrator:
                 "timestamp": now.isoformat(),
                 "payload": evt,
             })
+
+        # Broadcast funnel counts via WS
+        try:
+            await ws_manager.broadcast_funnel_counts(funnel)
+        except Exception:
+            pass
+
+        # Broadcast alert for each thesis
+        for thesis in theses:
+            try:
+                await ws_manager.broadcast_alert(
+                    "triggered", thesis.symbol,
+                    f"{thesis.symbol} {thesis.direction.value} thesis triggered @ {thesis.trigger:.2f}"
+                )
+            except Exception:
+                pass
 
         # 8. Write factor breakdowns and pipeline status to Redis
         try:
@@ -1037,6 +1132,7 @@ class PipelineOrchestrator:
 
         status = PipelineStatusResponse(
             last_cycle_at=now,
+            cycle_number=self._cycle_number,
             cycle_duration_ms=sum(layer_timings.values()),
             market_session=phase,
             time_bucket=time_bucket,
