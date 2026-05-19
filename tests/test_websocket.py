@@ -7,4 +7,4 @@ def test_websocket_connect_and_subscribe():
     with client.websocket_connect("/ws/v1/stream") as websocket:
         websocket.send_json({"action": "subscribe", "channels": ["market"]})
         data = websocket.receive_json()
-        assert data["type"] == "L1_CONTEXT"
+        assert data["type"] == "SUBSCRIBED"
