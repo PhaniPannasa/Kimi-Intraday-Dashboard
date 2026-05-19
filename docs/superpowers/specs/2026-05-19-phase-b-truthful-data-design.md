@@ -57,13 +57,13 @@ The `nse_scraper` module is initialized in `main.py` lifespan and caches results
 
 **#8 — Real L4 sector RS**
 
-Add `SECTOR_INDEX_MAP` mapping 11 NSE sector names to Upstox index keys. In `_run_live_cycle()`, fetch 5-min bars for all 11 sector indices, compute 5-day and 20-day returns vs Nifty, calculate RS-Ratio and RS-Momentum via the existing L4 module. Replace `_synthetic_sector_data()` calls. Cache sector data for the cycle (all stocks in same sector get same RS values).
+Add `SECTOR_INDEX_MAP` mapping 11 NSE sector names to Upstox index keys. In `_run_live_cycle()`, fetch 5-min bars for all 11 sector indices, compute 5-day and 20-day returns vs Nifty, calculate RS-Ratio and RS-Momentum via the existing L4 module. Replace `_synthetic_sector_data()` calls with real L4 output. Delete the `_synthetic_sector_data` static method after all call sites are migrated. Cache sector data for the cycle (all stocks in same sector get same RS values).
 
 ### Stream 2: Compute Layer Wiring
 
 **#5 — Real setup_type**
 
-Instead of `random.randint(1, 6)`, run L8's setup assemblers (`l8_setups/`) for stocks above a minimum score threshold. Each assembler checks trigger conditions (price vs reference levels, indicator state, time window). First passing setup wins. Stocks that don't trigger any setup get no thesis card (no fake theses).
+Instead of `random.randint(1, 6)`, run L8's setup assemblers (`l8_setups/`) for stocks with L5 raw score ≥ 40 (the minimum viable threshold — below this nothing actionable forms anyway). Each assembler checks trigger conditions (price vs reference levels, indicator state, time window). Try all 6 setup assemblers; first one whose conditions pass wins. Stocks that don't trigger any setup get no thesis card (no fake theses).
 
 **#6 — Real actionability_tier**
 
@@ -77,7 +77,7 @@ Instead of `random.randint(1, 6)`, run L8's setup assemblers (`l8_setups/`) for 
 
 **#14 — Thesis outcome INSERT**
 
-When L9 `on_tick()` detects a terminal state (T1_HIT, T2_HIT, INVALIDATED, STOPPED_OUT, EXPIRED), INSERT into `thesis_outcomes` hypertable. Columns: thesis_id, symbol, setup_type, regime, direction, entry_price, exit_price, exit_reason, mfe_pct, mae_pct, net_return, r_multiple, created_at.
+When L9 `on_tick()` detects a terminal state (T1_HIT, T2_HIT, INVALIDATED, STOPPED_OUT, EXPIRED), INSERT into `thesis_outcomes` hypertable. Columns: thesis_id, symbol, setup_type, regime, direction, sector, time_bucket, entry_price, exit_price, exit_reason, mfe_pct, mae_pct, net_return, r_multiple, created_at. The `sector` and `time_bucket` values come from the thesis card at creation time (L4 sector assignment and L1 time_bucket when the thesis was assembled).
 
 L10 `populate()` reads aggregated stats: `SELECT setup_type, regime, direction, sector, time_bucket, COUNT(*) as n, AVG(CASE WHEN net_return > 0 THEN 1 ELSE 0 END) as hit_rate, AVG(net_return) as avg_net_return, STDDEV(net_return) as std_net_return FROM thesis_outcomes GROUP BY ...`
 
