@@ -2,7 +2,7 @@
 
 import { useMarketStore } from '@/stores/marketStore';
 import { MockBadge } from './MockBadge';
-import type { SimPipelineLayer } from '@/data/engineSimulator';
+import type { SimPipelineLayer } from '@/data/simTypes';
 
 interface HealthStripItem {
   label: string;

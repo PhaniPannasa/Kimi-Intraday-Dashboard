@@ -6,7 +6,7 @@ import { useFactorBreakdown } from '@/hooks/useFactorBreakdown';
 import { MockBadge } from './MockBadge';
 import { setupTypeLabels } from '@/types/api';
 import type { ThesisCard, SymbolFactorBreakdown, ActionabilityTier, Regime } from '@/types/api';
-import type { SimStock, SimMarketContext } from '@/data/engineSimulator';
+import type { SimStock, SimMarketContext } from '@/data/simTypes';
 
 // ─── Helpers to bridge SimStock → API types ───
 

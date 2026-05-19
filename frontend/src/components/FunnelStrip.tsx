@@ -3,8 +3,8 @@
 import { cn } from '@/lib/utils';
 import { useMarketStore } from '@/stores/marketStore';
 import { MockBadge } from './MockBadge';
-import { LAYER_META } from '@/data/engineSimulator';
-import type { SimPipelineLayer } from '@/data/engineSimulator';
+import { LAYER_META } from '@/data/simTypes';
+import type { SimPipelineLayer } from '@/data/simTypes';
 
 const LAYER_ORDER = ['L1', 'L2', 'L3', 'L4', 'L5', 'L6', 'L7', 'L8', 'L9', 'L10'];
 

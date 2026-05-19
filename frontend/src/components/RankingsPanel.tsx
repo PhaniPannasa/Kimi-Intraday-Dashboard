@@ -8,7 +8,7 @@ import { DataAgeBadge } from './DataAgeBadge';
 import { MockBadge } from './MockBadge';
 import type { RankingEntry } from '@/types/api';
 import { setupTypeLabels } from '@/types/api';
-import type { SimStock } from '@/data/engineSimulator';
+import type { SimStock } from '@/data/simTypes';
 
 type Direction = 'LONG' | 'SHORT';
 
