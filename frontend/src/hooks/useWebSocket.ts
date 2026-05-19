@@ -13,6 +13,7 @@ export function useWebSocket() {
   const invalidateThesis = useMarketStore((s) => s.invalidateThesis);
   const updateEdgeTier = useMarketStore((s) => s.updateEdgeTier);
   const setWSTimestamp = useMarketStore((s) => s.setWSTimestamp);
+  const setSource = useMarketStore((s) => s.setSource);
 
   useEffect(() => {
     const socket = new WebSocket(WS_URL);
@@ -26,6 +27,9 @@ export function useWebSocket() {
     socket.onmessage = (event) => {
       const msg: WSMessage = JSON.parse(event.data);
       setWSTimestamp(msg.type, msg.timestamp);
+      const wsSource = msg.source ?? 'unknown';
+      const key = `ws/${msg.type.toLowerCase()}`;
+      setSource(key, wsSource);
       switch (msg.type) {
         case 'L1_CONTEXT':
           setContext(msg.payload);
@@ -49,5 +53,5 @@ export function useWebSocket() {
     socket.onerror = () => setWsConnected(false);
 
     return () => { socket.close(); };
-  }, [setWsConnected, setContext, setRankings, addOrUpdateThesis, invalidateThesis, updateEdgeTier, setWSTimestamp]);
+  }, [setWsConnected, setContext, setRankings, addOrUpdateThesis, invalidateThesis, updateEdgeTier, setWSTimestamp, setSource]);
 }
