@@ -24,6 +24,7 @@ from core.data.nse_scraper import nse_scraper
 from core.session.market_session import session as market_session
 from layers.l1_market_context import L1MarketContext
 from layers.l3_signals import L3Signals, ema_aligned, detect_macd_divergence
+from layers.l4_sector import rank_sectors
 from layers.l5_scoring import L5Scoring
 from layers.l6_ranking import L6Ranking
 from layers.l7_confluence import L7Confluence
@@ -337,6 +338,20 @@ class BarAggregator:
 
 NIFTY_INDEX_KEY = "NSE_INDEX|Nifty 50"
 
+SECTOR_INDEX_MAP: dict[str, str] = {
+    "Auto": "NSE_INDEX|Nifty Auto",
+    "Bank": "NSE_INDEX|Nifty Bank",
+    "FMCG": "NSE_INDEX|Nifty FMCG",
+    "IT": "NSE_INDEX|Nifty IT",
+    "Media": "NSE_INDEX|Nifty Media",
+    "Metal": "NSE_INDEX|Nifty Metal",
+    "Pharma": "NSE_INDEX|Nifty Pharma",
+    "PSU Bank": "NSE_INDEX|Nifty PSU Bank",
+    "Realty": "NSE_INDEX|Nifty Realty",
+    "Energy": "NSE_INDEX|Nifty Energy",
+    "Telecom": "NSE_INDEX|Nifty Telecom",
+}
+
 
 def _check_earnings_today(symbol: str, earnings_data: list) -> str:
     """Check if symbol has earnings announcement today."""
@@ -464,6 +479,37 @@ class PipelineOrchestrator:
         except Exception:
             pass
 
+        # L4: Compute real sector RS from sector index feeds
+        real_sector_data: dict[str, dict] = {}
+        try:
+            sector_returns: dict[str, float] = {}
+            sector_histories: dict[str, list] = {}
+            for sector_name, index_key in SECTOR_INDEX_MAP.items():
+                try:
+                    resp = await self.upstox_rest.get_historical_candle(index_key, "1minute")
+                    df = self._candle_json_to_df(resp)
+                    if len(df) >= 5:
+                        close = df["close"].to_numpy()
+                        sector_returns[sector_name] = float((close[-1] - close[0]) / close[0])
+                        sector_histories[sector_name] = (
+                            [float((close[i] - close[i-5]) / close[i-5])
+                             for i in range(5, len(close), 5)]
+                            if len(close) >= 25 else
+                            [float((close[-1] - close[0]) / close[0])]
+                        )
+                except Exception:
+                    continue
+            if sector_returns:
+                nifty_5min_return = float(
+                    (nifty_df["close"].to_numpy()[-1] - nifty_df["close"].to_numpy()[0])
+                    / nifty_df["close"].to_numpy()[0]
+                ) if nifty_df is not None and len(nifty_df) >= 5 else 0.0
+                ranked_sectors = rank_sectors(sector_returns, nifty_5min_return, sector_histories)
+                for entry in ranked_sectors:
+                    real_sector_data[entry["sector"]] = entry
+        except Exception:
+            pass
+
         # 2. Per-symbol: L3 -> signals -> L5 score
         scored: list[dict] = []
         stock_data: dict[str, pl.DataFrame] = {}
@@ -484,7 +530,7 @@ class PipelineOrchestrator:
                 signals["earnings"] = flags.get("earnings") == "Earnings"
                 regime = self._current_regime()
 
-                sector_data = self._synthetic_sector_data(sym)
+                sector_data = real_sector_data.get("Bank", {"rank": 6, "tailwind": False})
                 oi_data = {"classification": "Neutral"}
 
                 result = self.l5.compute(signals, regime, sector_data, oi_data)
@@ -878,11 +924,6 @@ class PipelineOrchestrator:
             r = self.latest_context.regime
             return r.value if hasattr(r, "value") else str(r)
         return "Range-Bound"
-
-    @staticmethod
-    def _synthetic_sector_data(symbol: str) -> dict:
-        """Placeholder sector data — replace with real L4 feed later."""
-        return {"rank": random.randint(1, 11), "tailwind": random.random() > 0.7}
 
     @staticmethod
     def _extract_confluence_data(
