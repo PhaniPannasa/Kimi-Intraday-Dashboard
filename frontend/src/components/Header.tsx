@@ -7,6 +7,8 @@ interface HeaderProps {
   paused: boolean;
   cycle: number;
   onPauseToggle: () => void;
+  learnMode?: boolean;
+  onLearnToggle?: (v: boolean) => void;
 }
 
 function ClockIST() {
@@ -26,7 +28,8 @@ function ClockIST() {
 
   return (
     <span className="font-mono text-[var(--text-secondary)] text-sm">
-      {hh}:{mm}<span className="text-[var(--text-tertiary)]">:{ss}</span> IST
+      {hh}:{mm}<span className="hidden text-[var(--text-tertiary)] sm:inline">:{ss}</span>
+      <span className="hidden sm:inline"> IST</span>
     </span>
   );
 }
@@ -91,7 +94,7 @@ function RefreshRing({ progress, paused, cycle }: { progress: number; paused: bo
           {paused ? '||' : Math.ceil((1 - progress) * 60)}
         </span>
       </div>
-      <div className="flex flex-col text-[10px] leading-tight">
+      <div className="hidden flex-col text-[10px] leading-tight sm:flex">
         <span className="text-[var(--text-tertiary)] uppercase tracking-wide">Next cycle</span>
         <span className="font-mono text-[var(--text-secondary)]">#{String(cycle).padStart(5, '0')}</span>
       </div>
@@ -99,10 +102,10 @@ function RefreshRing({ progress, paused, cycle }: { progress: number; paused: bo
   );
 }
 
-export function Header({ progress, paused, cycle, onPauseToggle }: HeaderProps) {
+export function Header({ progress, paused, cycle, onPauseToggle, learnMode, onLearnToggle }: HeaderProps) {
   return (
     <header
-      className="flex items-center gap-3 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2 md:px-4"
+      className="flex items-center gap-2 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)] px-2 py-1.5 sm:gap-3 sm:px-4 sm:py-2"
     >
       {/* Logo + Title */}
       <div className="flex items-center gap-2">
@@ -115,14 +118,14 @@ export function Header({ progress, paused, cycle, onPauseToggle }: HeaderProps) 
           K
         </div>
         <div className="flex flex-col leading-tight">
-          <span className="text-base font-bold tracking-tight">Kimi Intraday</span>
+          <span className="text-sm font-bold tracking-tight sm:text-base">Kimi Intraday</span>
           <span className="hidden text-[10px] text-[var(--text-tertiary)] sm:block">
             NSE Nifty 100 · Research Only
           </span>
         </div>
       </div>
 
-      <div className="h-4 w-px bg-[var(--border-subtle)]" />
+      <div className="hidden h-4 w-px bg-[var(--border-subtle)] sm:block" />
 
       {/* Phase badges */}
       <div className="hidden items-center gap-1.5 lg:flex">
@@ -135,6 +138,28 @@ export function Header({ progress, paused, cycle, onPauseToggle }: HeaderProps) 
       </div>
 
       <div className="flex-1" />
+
+      {/* Learn mode toggle */}
+      {onLearnToggle && (
+        <>
+          <button
+            onClick={() => onLearnToggle(!learnMode)}
+            title={learnMode ? 'Hide learn captions' : 'Show learn captions'}
+            className="inline-flex h-6 items-center gap-1 rounded border px-2 text-[10px] font-bold tracking-wide transition-colors"
+            style={{
+              borderColor: learnMode ? 'var(--accent-soft)' : 'var(--border-subtle)',
+              background: learnMode ? 'var(--accent-dim)' : 'var(--bg-surface-raised)',
+              color: learnMode ? 'var(--accent)' : 'var(--text-secondary)',
+            }}
+          >
+            <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+              <path d="M1 2.5h4.5v7l-.6-.4-.6-.3-.6-.2-.6-.1H1zM10 2.5H5.5v7l.6-.4.6-.3.6-.2.6-.1H10z" stroke="currentColor" strokeWidth="0.9" strokeLinejoin="round" />
+            </svg>
+            LEARN
+          </button>
+          <div className="h-4 w-px bg-[var(--border-subtle)]" />
+        </>
+      )}
 
       {/* Clock */}
       <ClockIST />

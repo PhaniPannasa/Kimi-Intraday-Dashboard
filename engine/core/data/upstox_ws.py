@@ -16,7 +16,7 @@ class UpstoxWSClient:
         self.on_tick = None  # async callback (message) -> None
 
     async def connect(self):
-        self.ws = await websockets.connect(self.url, extra_headers=self.headers)
+        self.ws = await websockets.connect(self.url, additional_headers=self.headers)
         self.running = True
 
     async def subscribe(self, instrument_keys: list[str], mode: str = "full"):

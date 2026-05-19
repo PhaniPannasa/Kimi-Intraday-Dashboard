@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from datetime import datetime
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 
 from models.enums import Direction
 
@@ -68,6 +68,7 @@ class L7ConfluenceCheck(BaseModel):
 class L8ThesisSnapshot(BaseModel):
     thesis_id: str = ""
     setup_type: int = 1
+    setup_label: str = ""
     trigger: float = 0.0
     invalidation: float = 0.0
     t1: float = 0.0
@@ -76,6 +77,27 @@ class L8ThesisSnapshot(BaseModel):
     net_rr: float = 0.0
     grade: str = "UNATTRACTIVE"
     actionability_tier: str = "Research-Only"
+    valid_until_min: int = 915  # minutes since midnight IST
+    time_decay: float = 1.0
+
+
+class L9MonitorSnapshot(BaseModel):
+    """Per-symbol L9 monitoring state."""
+    state: str = "PENDING"
+    mfe_R: float = 0.0
+    mae_R: float = 0.0
+    entry_price: Optional[float] = None
+    current_price: Optional[float] = None
+
+
+class L10EdgeSnapshot(BaseModel):
+    """Per-symbol L10 edge tier match."""
+    edge_tier: int = 6
+    hit_rate: float = 0.0
+    ci_lower: float = 0.0
+    ci_upper: float = 0.0
+    n_samples: int = 0
+    is_significant: bool = False
 
 
 class SymbolFactorBreakdown(BaseModel):
@@ -89,6 +111,12 @@ class SymbolFactorBreakdown(BaseModel):
     l6_ranking: L6RankSnapshot = L6RankSnapshot()
     l7_confluence: L7ConfluenceCheck = L7ConfluenceCheck()
     l8_thesis: L8ThesisSnapshot = L8ThesisSnapshot()
+    l9_monitor: Optional[L9MonitorSnapshot] = None
+    l10_edge: Optional[L10EdgeSnapshot] = None
+    # Rich fields
+    price: float = 0.0
+    change_pct: float = 0.0
+    sparkline: List[float] = []
 
 
 class PipelineLayerStatus(BaseModel):
@@ -99,7 +127,9 @@ class PipelineLayerStatus(BaseModel):
 
 class PipelineStatusResponse(BaseModel):
     last_cycle_at: Optional[datetime] = None
+    cycle_number: int = 0
     cycle_duration_ms: int = 0
     market_session: str = "Closed"
     time_bucket: str = "Pre-Open"
     layers: Dict[str, PipelineLayerStatus] = {}
+    funnel_counts: Optional[Dict[str, Dict[str, int]]] = None

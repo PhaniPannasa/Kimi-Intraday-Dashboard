@@ -7,11 +7,14 @@ import { cn } from '@/lib/utils';
 import { DataAgeBadge } from './DataAgeBadge';
 import type { RankingEntry } from '@/types/api';
 import { setupTypeLabels } from '@/types/api';
+import type { SimStock } from '@/data/engineSimulator';
 
 type Direction = 'LONG' | 'SHORT';
 
-function TierBadge({ tier }: { tier: RankingEntry['actionability_tier'] }) {
-  const styles = {
+// ─── Small sub-components (kept identical in behaviour) ───
+
+function TierBadge({ tier }: { tier: string }) {
+  const styles: Record<string, string> = {
     Tradeable: 'bg-[var(--trade-long-dim)] text-[var(--trade-long)]',
     Constrained: 'bg-[var(--trade-neutral-dim)] text-[var(--trade-neutral)]',
     'Research-Only': 'bg-[var(--bg-surface-raised)] text-[var(--text-tertiary)]',
@@ -20,7 +23,7 @@ function TierBadge({ tier }: { tier: RankingEntry['actionability_tier'] }) {
     <span
       className={cn(
         'inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold',
-        styles[tier]
+        styles[tier] ?? styles['Research-Only']
       )}
     >
       {tier === 'Research-Only' ? 'R&D' : tier}
@@ -28,14 +31,14 @@ function TierBadge({ tier }: { tier: RankingEntry['actionability_tier'] }) {
   );
 }
 
-function MovementIcon({ movement }: { movement: RankingEntry['rank_movement'] }) {
-  const config = {
+function MovementIcon({ movement }: { movement: string }) {
+  const config: Record<string, { label: string; color: string }> = {
     NEW: { label: 'NEW', color: 'text-[var(--accent)]' },
     UP: { label: '▲', color: 'text-[var(--trade-long)]' },
     DOWN: { label: '▼', color: 'text-[var(--trade-short)]' },
     STABLE: { label: '—', color: 'text-[var(--text-tertiary)]' },
   };
-  const c = config[movement];
+  const c = config[movement] ?? config.STABLE;
   return <span className={cn('font-mono text-[10px] font-bold', c.color)}>{c.label}</span>;
 }
 
@@ -58,13 +61,85 @@ function ScoreBar({ score, direction }: { score: number; direction: 'LONG' | 'SH
   );
 }
 
-interface RankingsPanelProps {
-  onSelectSymbol?: (symbol: string) => void;
-  flashedSymbols?: Map<string, string>;
+// ─── Sparkline (new) ───
+
+function SparklineCol({ data, direction }: { data: number[]; direction: 'LONG' | 'SHORT' }) {
+  if (!data || data.length < 2) return null;
+  const w = 30;
+  const h = 16;
+  const mn = Math.min(...data);
+  const mx = Math.max(...data);
+  const rng = mx - mn || 1;
+  const pts = data
+    .map((v, i) => `${((i / (data.length - 1)) * w).toFixed(1)},${(h - ((v - mn) / rng) * h).toFixed(1)}`)
+    .join(' ');
+  const color = direction === 'LONG' ? 'var(--trade-long)' : 'var(--trade-short)';
+  return (
+    <svg width={w} height={h} className="inline-block overflow-visible align-middle" aria-hidden="true">
+      <polyline points={pts} fill="none" stroke={color} strokeWidth={1} strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
 }
 
+// ─── Common display-row type & normaliser ───
+
+interface DisplayRow {
+  symbol: string;
+  score: number;
+  direction: 'LONG' | 'SHORT';
+  rank_movement: string;
+  net_rr: number;
+  confluence_score: number;
+  setup_type: number;
+  actionability_tier: string;
+  // Enhanced (SimStock) — undefined when sourced from API
+  price?: number;
+  change_pct?: number;
+  sector_name?: string;
+  setup_label?: string;
+  spark?: number[];
+}
+
+function toDisplayRow(e: RankingEntry | SimStock): DisplayRow {
+  const base = {
+    symbol: e.symbol,
+    score: e.score,
+    direction: e.direction,
+    rank_movement: e.rank_movement,
+    net_rr: e.net_rr,
+    confluence_score: e.confluence_score ?? 0,
+    setup_type: e.setup_type,
+  };
+
+  if ('candles' in e) {
+    // SimStock branch (has candles array that RankingEntry doesn't)
+    return {
+      ...base,
+      actionability_tier: e.tier as string,
+      price: e.price,
+      change_pct: e.change_pct,
+      sector_name: e.sector_name,
+      setup_label: e.setup_label,
+      spark: e.spark,
+    };
+  }
+
+  // RankingEntry branch
+  return {
+    ...base,
+    actionability_tier: e.actionability_tier,
+    price: undefined,
+    change_pct: undefined,
+    sector_name: undefined,
+    setup_label: undefined,
+    spark: undefined,
+  };
+}
+
+// ─── Mobile card ───
+
 interface MobileRankCardProps {
-  entry: RankingEntry;
+  entry: DisplayRow;
   rank: number;
   selected: boolean;
   onSelect: () => void;
@@ -72,39 +147,49 @@ interface MobileRankCardProps {
 }
 
 function MobileRankCard({ entry, rank, selected, onSelect, flash }: MobileRankCardProps) {
-  const dirColor = 'var(--trade-long)';
+  const dirColor = entry.direction === 'LONG' ? 'var(--trade-long)' : 'var(--trade-short)';
 
   return (
     <button
       onClick={onSelect}
       className={cn(
-        'w-full animate-pulse rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-2 text-left',
+        'w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-2 text-left',
         'border-l-[3px] transition-colors',
         flash || '',
         selected && 'border-l-[var(--accent)] bg-[var(--bg-surface-raised)]'
       )}
       style={{ borderLeftColor: dirColor }}
     >
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5">
         <span className="font-mono text-[10px] text-[var(--text-tertiary)]">{rank}</span>
-        <span className="font-bold text-sm">{entry.symbol}</span>
+        <span className="truncate text-[13px] font-bold">{entry.symbol}</span>
         <MovementIcon movement={entry.rank_movement} />
         <span className="flex-1" />
-        <span className="font-mono text-sm tabular-nums">{entry.score.toFixed(1)}</span>
+        {entry.price != null && (
+          <span className="hidden font-mono text-[11px] tabular-nums min-[380px]:inline">
+            {'₹'}{entry.price.toFixed(2)}
+          </span>
+        )}
+        <span className="font-mono text-[13px] tabular-nums">{entry.score.toFixed(1)}</span>
         <span
           className={cn(
             'font-mono text-[10px]',
             entry.net_rr >= 1.1 ? 'text-[var(--trade-long)]' : 'text-[var(--text-secondary)]'
           )}
         >
-          {entry.net_rr >= 0 ? '+' : ''}{entry.net_rr.toFixed(2)}%
+          {entry.net_rr >= 0 ? '+' : ''}{entry.net_rr.toFixed(2)}
         </span>
       </div>
       <div className="mt-1.5 flex flex-wrap items-center gap-2">
-        <ScoreBar score={entry.score} direction="LONG" />
+        {entry.spark && <SparklineCol data={entry.spark} direction={entry.direction} />}
+        <ScoreBar score={entry.score} direction={entry.direction} />
         <span className="text-[10px] text-[var(--text-secondary)]">
-          {setupTypeLabels[entry.setup_type] ?? entry.setup_type}
+          {entry.setup_label || (setupTypeLabels[entry.setup_type] ?? entry.setup_type)}
         </span>
+        {/* Sector on mobile */}
+        {entry.sector_name && (
+          <span className="text-[9px] text-[var(--text-tertiary)]">{entry.sector_name}</span>
+        )}
         <span className="font-mono text-[10px] text-[var(--text-secondary)]">
           R:R {entry.net_rr.toFixed(2)}
         </span>
@@ -114,21 +199,45 @@ function MobileRankCard({ entry, rank, selected, onSelect, flash }: MobileRankCa
   );
 }
 
-export function RankingsPanel({ onSelectSymbol, flashedSymbols = new Map() }: RankingsPanelProps) {
+// ─── Props ───
+
+interface RankingsPanelProps {
+  onSelectSymbol?: (symbol: string) => void;
+  flashedSymbols?: Map<string, string>;
+  /** When provided, use these rich SimStock entries instead of the API hook. */
+  entries?: SimStock[];
+}
+
+// ─── Component ───
+
+export function RankingsPanel({ onSelectSymbol, flashedSymbols = new Map(), entries: simEntries }: RankingsPanelProps) {
   const [direction, setDirection] = useState<'LONG' | 'SHORT'>('LONG');
   const rankingTs = useMarketStore((s) => s.lastWSTimestamps['L6_RANKINGS']);
 
+  // API hook (always called — does nothing when simEntries are provided because we pass the other direction below)
   const { data: longsData, isLoading: longsLoading } = useRankings('long');
   const { data: shortsData, isLoading: shortsLoading } = useRankings('short');
 
-  const entries = direction === 'LONG' ? longsData ?? [] : shortsData ?? [];
-  const isLoading = direction === 'LONG' ? longsLoading : shortsLoading;
+  // Pick source
+  const apiEntries: RankingEntry[] = direction === 'LONG' ? (longsData ?? []) : (shortsData ?? []);
+  const simFiltered = useMemo<SimStock[] | null>(() => {
+    if (!simEntries) return null;
+    return simEntries.filter((s) => s.direction === direction);
+  }, [simEntries, direction]);
 
-  // Concentration metrics (L6)
+  const rawEntries = simFiltered ?? apiEntries;
+  const isLoading = simEntries ? false : (direction === 'LONG' ? longsLoading : shortsLoading);
+
+  // Normalise to display rows (one-time cost per source change)
+  const entries = useMemo(() => rawEntries.map(toDisplayRow), [rawEntries]);
+  const hasRichData = simEntries !== undefined;
+
+  // Sector concentration (fixed to key on sector_name when available)
   const sectorCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     entries.forEach((e) => {
-      counts[e.symbol] = (counts[e.symbol] || 0) + 1;
+      const sec = e.sector_name || e.symbol;
+      counts[sec] = (counts[sec] || 0) + 1;
     });
     return counts;
   }, [entries]);
@@ -138,12 +247,17 @@ export function RankingsPanel({ onSelectSymbol, flashedSymbols = new Map() }: Ra
   const scoreSpread = entries.length >= 2 ? entries[0].score - entries[entries.length - 1].score : 0;
   const strongConviction = scoreSpread > 20;
 
-  const handleSelect = (entry: RankingEntry) => {
+  const handleSelect = (entry: DisplayRow) => {
     onSelectSymbol?.(entry.symbol);
   };
 
   const accentColor = direction === 'LONG' ? 'var(--trade-long)' : 'var(--trade-short)';
   const accentDim = direction === 'LONG' ? 'var(--trade-long-dim)' : 'var(--trade-short-dim)';
+
+  // Column helper — only show extra columns when rich data is present
+  const showChart = hasRichData;
+  const showLtp = hasRichData;
+  const showSector = hasRichData;
 
   return (
     <div
@@ -182,7 +296,7 @@ export function RankingsPanel({ onSelectSymbol, flashedSymbols = new Map() }: Ra
             color: themeDay ? 'var(--trade-neutral)' : 'var(--text-tertiary)',
           }}
         >
-          {themeDay ? '⚑ ' : ''}sec {topSectorCount}
+          {themeDay ? '⚑' : ''}sec {topSectorCount}
         </span>
 
         <span className="text-[10px] text-[var(--text-tertiary)]">L6</span>
@@ -231,7 +345,7 @@ export function RankingsPanel({ onSelectSymbol, flashedSymbols = new Map() }: Ra
           </div>
         ) : (
           <>
-            {/* Mobile cards */}
+            {/* ─── Mobile cards ─── */}
             <div className="space-y-2 p-2 md:hidden">
               {entries.map((entry, i) => (
                 <MobileRankCard
@@ -245,15 +359,18 @@ export function RankingsPanel({ onSelectSymbol, flashedSymbols = new Map() }: Ra
               ))}
             </div>
 
-            {/* Desktop table */}
+            {/* ─── Desktop table ─── */}
             <div className="hidden md:block">
               <table className="w-full text-left text-[12px]">
                 <thead>
                   <tr className="border-b border-[var(--border-subtle)] bg-[var(--bg-surface)] text-[9px] uppercase tracking-wide text-[var(--text-tertiary)]">
                     <th className="px-2 py-1.5 font-medium">#</th>
                     <th className="px-2 py-1.5 font-medium">Symbol</th>
+                    {showChart && <th className="px-2 py-1.5 font-medium">Chart</th>}
+                    {showLtp && <th className="px-2 py-1.5 font-medium text-right">LTP</th>}
                     <th className="px-2 py-1.5 font-medium text-right">Score</th>
                     <th className="px-2 py-1.5 font-medium">Setup</th>
+                    {showSector && <th className="px-2 py-1.5 font-medium">Sector</th>}
                     <th className="px-2 py-1.5 font-medium">Conf</th>
                     <th className="px-2 py-1.5 font-medium">R:R</th>
                     <th className="px-2 py-1.5 font-medium">Tier</th>
@@ -280,13 +397,47 @@ export function RankingsPanel({ onSelectSymbol, flashedSymbols = new Map() }: Ra
                           <span className="font-semibold">{entry.symbol}</span>
                           <MovementIcon movement={entry.rank_movement} />
                         </div>
+                        {entry.sector_name && (
+                          <div className="text-[9px] leading-tight text-[var(--text-tertiary)]">{entry.sector_name}</div>
+                        )}
                       </td>
+                      {showChart && (
+                        <td className="px-2 py-1.5">
+                          {entry.spark && <SparklineCol data={entry.spark} direction={entry.direction} />}
+                        </td>
+                      )}
+                      {showLtp && (
+                        <td className="px-2 py-1.5 text-right">
+                          {entry.price != null && (
+                            <div>
+                              <div className="font-mono text-[11px] tabular-nums">
+                                {'₹'}{entry.price.toFixed(2)}
+                              </div>
+                              {entry.change_pct != null && (
+                                <div
+                                  className="font-mono text-[10px] tabular-nums"
+                                  style={{
+                                    color: entry.change_pct >= 0 ? 'var(--trade-long)' : 'var(--trade-short)',
+                                  }}
+                                >
+                                  {entry.change_pct >= 0 ? '+' : ''}{entry.change_pct.toFixed(2)}%
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                      )}
                       <td className="px-2 py-1.5 text-right">
-                        <ScoreBar score={entry.score} direction={direction} />
+                        <ScoreBar score={entry.score} direction={entry.direction} />
                       </td>
                       <td className="px-2 py-1.5 text-[var(--text-secondary)]">
-                        {setupTypeLabels[entry.setup_type] ?? entry.setup_type}
+                        {entry.setup_label || (setupTypeLabels[entry.setup_type] ?? entry.setup_type)}
                       </td>
+                      {showSector && (
+                        <td className="px-2 py-1.5 text-[10px] text-[var(--text-tertiary)]">
+                          {entry.sector_name || '—'}
+                        </td>
+                      )}
                       <td className="px-2 py-1.5">
                         <span className="font-mono text-[10px]">
                           {entry.confluence_score}
@@ -294,7 +445,7 @@ export function RankingsPanel({ onSelectSymbol, flashedSymbols = new Map() }: Ra
                         </span>
                       </td>
                       <td
-                        className="font-mono tabular-nums"
+                        className="px-2 py-1.5 font-mono tabular-nums"
                         style={{
                           color: entry.net_rr >= 1.1 ? 'var(--trade-long)' : 'var(--text-primary)',
                         }}

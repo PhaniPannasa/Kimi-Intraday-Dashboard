@@ -107,6 +107,10 @@
     min-height: 44px;
     min-width: 44px;
   }
+
+  /* Hide scrollbar */
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
 }
 
 /* Animations */

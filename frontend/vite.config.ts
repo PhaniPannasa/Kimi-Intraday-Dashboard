@@ -24,9 +24,10 @@ export default defineConfig({
   server: {
     port: 8190,
     host: true,
+    allowedHosts: ['kimi.intraday-edge-4zz.uk', 'localhost'],
     proxy: {
       '/api': {
-        target: 'http://localhost:8170',
+        target: 'http://localhost:8172',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ''),
       },

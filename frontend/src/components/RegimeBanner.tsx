@@ -69,7 +69,7 @@ export function RegimeBanner() {
         </span>
       </div>
 
-      <div className="h-8 w-px bg-[var(--border-subtle)]" />
+      <div className="hidden h-8 w-px bg-[var(--border-subtle)] md:block" />
 
       {/* VIX */}
       <div className="flex flex-col leading-tight">
@@ -89,7 +89,7 @@ export function RegimeBanner() {
         </div>
       </div>
 
-      <div className="h-8 w-px bg-[var(--border-subtle)]" />
+      <div className="hidden h-8 w-px bg-[var(--border-subtle)] md:block" />
 
       {/* Breadth */}
       <div className="flex flex-col leading-tight">

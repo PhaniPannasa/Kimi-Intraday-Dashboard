@@ -123,11 +123,33 @@ future services in this app.
 `5180` (Stock-Strategy-App), `5432, 6379, 15432` (other databases on this machine),
 `5000, 8765` (OpenAlgo), `8000, 8001, 8083` (other python/java services).
 
-**Heads-up — naming collision:** the domain `intraday-edge-4zz.uk` and the
-Cloudflare Tunnel `intraday-edge` (UUID `f0a9d271-…`) belong to a *different*
-project — `C:\Users\phani\projects\Stock-Strategy-App\` — whose Vite runs on
-port 5180. Despite the similar name ("intraday"), it is not this repo. Do not
-re-point that tunnel to any port in this app's reserved set.
+**Cloudflare Tunnel:** this app shares the `intraday-edge` tunnel
+(UUID `f0a9d271-…`) with the Stock-Strategy-App via subdomain routing:
+- `intraday-edge-4zz.uk` → `localhost:5180` (Stock-Strategy-App)
+- `kimi.intraday-edge-4zz.uk` → `localhost:8190` (this app's Vite dev)
+
+Public URL for phone/mobile access: **https://kimi.intraday-edge-4zz.uk**
+
+The tunnel config lives at `C:\Users\phani\.cloudflared\config.yml`. When
+changing the ingress, restart cloudflared with:
+```powershell
+Stop-Process -Name cloudflared -Force
+cloudflared tunnel run intraday-edge
+```
+
+**After system restart:** cloudflared does NOT auto-start. To bring the
+public URL back online:
+```powershell
+# 1. Start the backend (required for API/WS)
+cd engine && uvicorn main:app --host 0.0.0.0 --port 8172 --reload
+
+# 2. Start the frontend (required for dashboard UI)
+cd frontend && npm run dev
+
+# 3. Start the Cloudflare tunnel
+cloudflared tunnel run intraday-edge
+```
+Then verify: `curl -s https://kimi.intraday-edge-4zz.uk/api/health`
 
 The frontend WebSocket uses the relative path `/ws/v1/stream`
 (`frontend/src/hooks/useWebSocket.ts:5`); Vite's `/ws` proxy forwards it to
