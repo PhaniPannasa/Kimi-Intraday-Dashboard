@@ -40,7 +40,7 @@ from models.frames import MarketContextFrame, ThesisCard
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
-# 100 Nifty constituents with their Upstox instrument keys (ISIN-based).
+# 105 Nifty constituents with their Upstox instrument keys (ISIN-based).
 SYMBOL_TO_INSTRUMENT_KEY: dict[str, str] = {
     "RELIANCE": "NSE_EQ|INE002A01018",
     "TCS": "NSE_EQ|INE467B01029",
