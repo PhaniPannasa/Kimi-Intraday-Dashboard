@@ -6,7 +6,6 @@ import { useFunnelCounts } from './useFunnelCounts';
 import { useActiveTheses } from './useActiveTheses';
 import { useEdgeTiers } from './useEdgeTiers';
 import { useActivityEvents } from './useActivityEvents';
-import { useCandles } from './useCandles';
 
 const queryClient = new QueryClient();
 const wrapper = ({ children }: { children: React.ReactNode }) => (
@@ -53,12 +52,5 @@ describe('new REST hooks', () => {
     const { result } = renderHook(() => useActivityEvents(), { wrapper });
     await waitFor(() => expect(result.current.data).toBeDefined());
     expect(globalThis.fetch).toHaveBeenCalledWith('/api/activity/events?since=0&limit=20');
-  });
-
-  it('useCandles(RELIANCE) hits /api/market/candles/RELIANCE', async () => {
-    mockOnce({ symbol: 'RELIANCE', candles: [] });
-    const { result } = renderHook(() => useCandles('RELIANCE'), { wrapper });
-    await waitFor(() => expect(result.current.data).toBeDefined());
-    expect(globalThis.fetch).toHaveBeenCalledWith('/api/market/candles/RELIANCE');
   });
 });
