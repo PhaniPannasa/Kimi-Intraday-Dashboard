@@ -33,14 +33,25 @@ export interface MarketContextFrame {
 export interface RankingEntry {
   symbol: string;
   instrument_key: string;
+  direction: Direction;
   score: number;
   setup_type: number;
+  setup_label?: string;
   confluence_score: number;
   net_rr: number;
   actionability_tier: ActionabilityTier;
   rank_movement: RankMovement;
   liquidity_quality: LiquidityQuality;
-  direction: Direction;
+  // Rich fields
+  price?: number;
+  change_pct?: number;
+  sector_name?: string;
+  sector_id?: number;
+  rs_ratio?: number;
+  rs_momentum?: number;
+  sparkline?: number[];
+  state?: string;
+  edge_tier?: number;
 }
 
 export interface ThesisCard {
@@ -178,6 +189,28 @@ export interface SymbolFactorBreakdown {
   l6_ranking: L6RankSnapshot;
   l7_confluence: L7ConfluenceCheck;
   l8_thesis: L8ThesisSnapshot;
+  l9_monitor?: L9MonitorSnapshot;
+  l10_edge?: L10EdgeSnapshot;
+  price?: number;
+  change_pct?: number;
+  sparkline?: number[];
+}
+
+export interface L9MonitorSnapshot {
+  state: string;
+  mfe_R: number;
+  mae_R: number;
+  entry_price?: number | null;
+  current_price?: number | null;
+}
+
+export interface L10EdgeSnapshot {
+  edge_tier: number;
+  hit_rate: number;
+  ci_lower: number;
+  ci_upper: number;
+  n_samples: number;
+  is_significant: boolean;
 }
 
 export interface PipelineLayerStatus {
@@ -188,15 +221,78 @@ export interface PipelineLayerStatus {
 
 export interface PipelineStatusResponse {
   last_cycle_at: string | null;
+  cycle_number: number;
   cycle_duration_ms: number;
   market_session: string;
   time_bucket: string;
   layers: Record<string, PipelineLayerStatus>;
+  funnel_counts?: Record<string, { in: number; out: number }> | null;
 }
 
+// ── New types for enhanced UI ──
+
+export interface ActivityEvent {
+  id: string;
+  ts: string;
+  type: 'NEW' | 'DROP' | 'TRIGGER' | 'T1' | 'ACTIVE' | 'INVALID' | 'JUMP_UP' | 'JUMP_DN' | 'STATE';
+  symbol: string;
+  direction: Direction;
+  text: string;
+  detail: string;
+  cycle: number;
+}
+
+export interface ActiveThesisEntry {
+  thesis_id: string;
+  symbol: string;
+  direction: Direction;
+  setup_label: string;
+  state: string;
+  trigger: number;
+  t1: number;
+  t2: number;
+  net_rr: number;
+  mfe_R: number;
+  mae_R: number;
+  entry_price: number | null;
+  current_price: number | null;
+}
+
+export interface CandleEntry {
+  o: number;
+  h: number;
+  l: number;
+  c: number;
+}
+
+export interface CandleOverlays {
+  vwap: number;
+  trigger: number;
+  invalidation: number;
+  t1: number;
+  t2: number;
+}
+
+export interface CandleResponse {
+  symbol: string;
+  interval: string;
+  candles: CandleEntry[];
+  overlays?: CandleOverlays | null;
+}
+
+import type { DataSource } from '@/lib/apiFetch';
+
+type WSEnvelope<T extends string, P> = {
+  type: T;
+  timestamp: string;
+  source?: DataSource;
+  payload: P;
+};
+
 export type WSMessage =
-  | { type: 'L1_CONTEXT'; timestamp: string; payload: MarketContextFrame }
-  | { type: 'L6_RANKINGS'; timestamp: string; payload: { long: RankingEntry[]; short: RankingEntry[] } }
-  | { type: 'L8_THESIS'; timestamp: string; payload: { thesis_id: string; card: ThesisCard } }
-  | { type: 'L9_INVALIDATION'; timestamp: string; payload: { thesis_id: string; reason: string } }
-  | { type: 'L10_EDGE'; timestamp: string; payload: { tier: number; promotion: string } };
+  | WSEnvelope<'L1_CONTEXT', MarketContextFrame>
+  | WSEnvelope<'L6_RANKINGS', { long: RankingEntry[]; short: RankingEntry[] }>
+  | WSEnvelope<'L8_THESIS', { thesis_id: string; card: ThesisCard }>
+  | WSEnvelope<'L9_INVALIDATION', { thesis_id: string; reason: string }>
+  | WSEnvelope<'L10_EDGE', { tier: number; promotion: string }>
+  | WSEnvelope<'SUBSCRIBED', { channels: string[] }>;

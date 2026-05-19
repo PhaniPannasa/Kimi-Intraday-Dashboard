@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { MarketContextFrame, RankingEntry, ThesisCard } from '@/types/api';
+import type { DataSource } from '@/lib/apiFetch';
 
 interface InvalidatedThesis {
   thesis_id: string;
@@ -17,6 +18,7 @@ interface MarketState {
   invalidatedTheses: InvalidatedThesis[];
   edgeTiers: Record<number, string>;
   lastWSTimestamps: Record<string, string>;
+  sources: Record<string, DataSource>;
   setContext: (ctx: MarketContextFrame) => void;
   setRankings: (long: RankingEntry[], short: RankingEntry[]) => void;
   setSelectedThesis: (thesis: ThesisCard | null) => void;
@@ -25,6 +27,7 @@ interface MarketState {
   invalidateThesis: (thesisId: string, reason: string) => void;
   updateEdgeTier: (tier: number, promotion: string) => void;
   setWSTimestamp: (channel: string, ts: string) => void;
+  setSource: (key: string, source: DataSource) => void;
 }
 
 export const useMarketStore = create<MarketState>((set) => ({
@@ -37,6 +40,7 @@ export const useMarketStore = create<MarketState>((set) => ({
   invalidatedTheses: [],
   edgeTiers: {},
   lastWSTimestamps: {},
+  sources: {},
   setContext: (ctx) => set({ context: ctx }),
   setRankings: (long, short) => set({ longRankings: long, shortRankings: short }),
   setSelectedThesis: (thesis) => set({ selectedThesis: thesis }),
@@ -62,4 +66,6 @@ export const useMarketStore = create<MarketState>((set) => ({
     set((state) => ({
       lastWSTimestamps: { ...state.lastWSTimestamps, [channel]: ts },
     })),
+  setSource: (key, source) =>
+    set((state) => ({ sources: { ...state.sources, [key]: source } })),
 }));
