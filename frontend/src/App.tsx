@@ -78,15 +78,8 @@ export default function App() {
 
   const isMobile = viewport.mobile;
   const cycle = pipelineStatus?.cycle_number ?? 0;
-  const layers = pipelineStatus
-    ? Object.entries(pipelineStatus.layers).map(([key, v]) => ({
-        key,
-        label: key.split('_')[0].toUpperCase(),
-        name: key,
-        status: v.status,
-        duration_ms: v.duration_ms,
-        last_run: v.last_run ? Date.parse(v.last_run) : 0,
-      }))
+  const layers: import('@/types/api').PipelineLayerStatus[] = pipelineStatus
+    ? Object.values(pipelineStatus.layers)
     : [];
 
   return (
@@ -143,6 +136,7 @@ export default function App() {
           <DetailColumn
             selected={selected}
             longRankings={longRankings}
+            shortRankings={shortRankings}
             viewMode={viewMode}
             setViewMode={setViewMode}
             learnMode={learnMode}
@@ -177,11 +171,12 @@ export default function App() {
 }
 
 function DetailColumn({
-  selected, longRankings, viewMode, setViewMode, learnMode,
+  selected, longRankings, shortRankings, viewMode, setViewMode, learnMode,
   inspectedLayer, onCloseLayer, onSwitchLayer, setSelected,
 }: {
   selected: RankingEntry | null;
   longRankings: RankingEntry[];
+  shortRankings: RankingEntry[];
   viewMode: string;
   setViewMode: (v: 'journey' | 'cards') => void;
   learnMode: boolean;
@@ -230,7 +225,7 @@ function DetailColumn({
         {inspectedLayer ? (
           <LayerInspector
             layerKey={inspectedLayer}
-            snapshot={{ universe: { longs: longRankings, shorts: [], cycle: 0 } as any, ctx: null as any, pipeline: [] }}
+            stocks={[...longRankings, ...shortRankings] as any}
             ctx={null as any}
             onClose={onCloseLayer}
             onSwitchLayer={onSwitchLayer}
@@ -317,6 +312,7 @@ function MobileLayout({
           <DetailColumn
             selected={selected}
             longRankings={longRankings}
+            shortRankings={shortRankings}
             viewMode={viewMode}
             setViewMode={setViewMode}
             learnMode={learnMode}

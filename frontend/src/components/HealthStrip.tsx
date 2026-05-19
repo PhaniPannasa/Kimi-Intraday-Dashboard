@@ -2,7 +2,7 @@
 
 import { useMarketStore } from '@/stores/marketStore';
 import { MockBadge } from './MockBadge';
-import type { SimPipelineLayer } from '@/data/simTypes';
+import type { PipelineLayerStatus } from '@/types/api';
 
 interface HealthStripItem {
   label: string;
@@ -11,7 +11,7 @@ interface HealthStripItem {
 }
 
 interface HealthStripProps {
-  pipeline: SimPipelineLayer[];
+  pipeline: PipelineLayerStatus[];
   cycle: number;
   paused: boolean;
   lastCycleAt: number;

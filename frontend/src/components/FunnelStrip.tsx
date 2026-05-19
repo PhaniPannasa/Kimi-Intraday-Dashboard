@@ -3,13 +3,13 @@
 import { cn } from '@/lib/utils';
 import { useMarketStore } from '@/stores/marketStore';
 import { MockBadge } from './MockBadge';
-import { LAYER_META } from '@/data/simTypes';
-import type { SimPipelineLayer } from '@/data/simTypes';
+import { LAYER_META } from '@/types/api';
+import type { PipelineLayerStatus } from '@/types/api';
 
 const LAYER_ORDER = ['L1', 'L2', 'L3', 'L4', 'L5', 'L6', 'L7', 'L8', 'L9', 'L10'];
 
 interface FunnelStripProps {
-  layers: SimPipelineLayer[];
+  layers: PipelineLayerStatus[];
   activeLayer: number;
   funnel: Record<string, { in_count: number; out_count: number; layer: string }>;
   onInspect: (key: string) => void;
@@ -65,7 +65,7 @@ export function FunnelStrip({
 
         {/* Layer tiles */}
         {layers.map((layer, i) => {
-          const label = LAYER_ORDER[i] ?? layer.label;
+          const label = LAYER_ORDER[i];
           const meta = LAYER_META[label];
           const fd = funnel[label];
           const inCount = fd?.in_count ?? 0;
@@ -79,7 +79,7 @@ export function FunnelStrip({
 
           return (
             <button
-              key={layer.key}
+              key={label}
               onClick={() => onInspect(label)}
               className={cn(
                 'group relative flex min-w-[72px] flex-col items-center justify-center px-2 py-1.5 text-center transition-all duration-200 sm:min-w-[88px] sm:px-3',
@@ -104,7 +104,7 @@ export function FunnelStrip({
 
               {/* Layer name */}
               <span className="text-[9px] leading-tight text-[var(--text-tertiary)]">
-                {meta?.name ?? layer.name}
+                {meta?.name ?? ''}
               </span>
 
               {/* Duration */}

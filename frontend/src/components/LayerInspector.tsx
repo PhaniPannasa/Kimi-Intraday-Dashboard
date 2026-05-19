@@ -2,9 +2,9 @@
 
 import { useMemo, useState } from 'react';
 import { cn } from '@/lib/utils';
-import { LAYER_META, SECTORS } from '@/data/simTypes';
+import { LAYER_META, SECTORS, setupTypeLabels } from '@/types/api';
+import type { SymbolFactorBreakdown, MarketContextFrame } from '@/types/api';
 import { StatTile, MiniBar, Histogram, StockTable, VerdictPill, SectionHeader } from './SharedComponents';
-import type { SimStock, SimSnapshot, SimMarketContext } from '@/data/simTypes';
 import type { StockColumn } from './SharedComponents';
 
 /* ─── Helpers ────────────────────────────────────────── */
@@ -36,11 +36,8 @@ function avg(arr: number[]): number {
   return arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
 }
 
-function useAllStocks(snapshot: SimSnapshot): SimStock[] {
-  return useMemo(
-    () => [...snapshot.universe.longs, ...snapshot.universe.shorts],
-    [snapshot],
-  );
+function useAllStocks(stocks: SymbolFactorBreakdown[]): SymbolFactorBreakdown[] {
+  return stocks;
 }
 
 const LAYER_ORDER = ['L1', 'L2', 'L3', 'L4', 'L5', 'L6', 'L7', 'L8', 'L9', 'L10'];
@@ -51,13 +48,13 @@ const LAYER_INDEX: Record<string, number> = Object.fromEntries(
 /* ═══════════════════════════════════════════════════════
    L1 — Market Context
    ═══════════════════════════════════════════════════════ */
-function L1View({ ctx, snapshot }: { ctx: SimMarketContext; snapshot: SimSnapshot }) {
-  const all = useAllStocks(snapshot);
+function L1View({ ctx, stocks }: { ctx: MarketContextFrame; stocks: SymbolFactorBreakdown[] }) {
+  const all = useAllStocks(stocks);
   const sectorDist = useMemo(
     () =>
       SECTORS.map((s) => ({
         label: s.name.slice(0, 5),
-        value: all.filter((st) => st.sector_id === s.id).length,
+        value: all.filter((st) => st.l4_sector.sector_id === s.id).length,
       })),
     [all],
   );
@@ -155,20 +152,20 @@ function L1View({ ctx, snapshot }: { ctx: SimMarketContext; snapshot: SimSnapsho
 /* ═══════════════════════════════════════════════════════
    L2 — Universe
    ═══════════════════════════════════════════════════════ */
-function L2View({ snapshot }: { snapshot: SimSnapshot }) {
-  const all = useAllStocks(snapshot);
+function L2View({ stocks, ctx: _ctx }: { stocks: SymbolFactorBreakdown[]; ctx: MarketContextFrame }) {
+  const all = useAllStocks(stocks);
   const [sortKey, setSortKey] = useState<string | undefined>();
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [selectedSym, setSelectedSym] = useState<string | null>(null);
 
-  const banned = all.filter((s) => s.fo_ban).length;
-  const earnings = all.filter((s) => s.earnings_flag !== 'None').length;
-  const mwpl = all.filter((s) => s.mwpl_status !== 'None').length;
-  const avgLqs = avg(all.map((s) => s.lqs));
+  const banned = all.filter((s) => s.l2_universe.fo_ban).length;
+  const earnings = all.filter((s) => s.l2_universe.earnings_flag !== 'None').length;
+  const mwpl = all.filter((s) => s.l2_universe.mwpl_status !== 'None').length;
+  const avgLqs = avg(all.map((s) => s.l2_universe.lqs_score));
   const lqsHist = useMemo(
     () =>
       binValues(
-        all.map((s) => s.lqs * 100),
+        all.map((s) => s.l2_universe.lqs_score * 100),
         10,
         50,
         100,
@@ -180,30 +177,30 @@ function L2View({ snapshot }: { snapshot: SimSnapshot }) {
   const columns: StockColumn[] = useMemo(
     () => [
       { key: 'symbol', label: 'Symbol', render: (s) => <span className="font-semibold">{s.symbol}</span>, sortable: true, sortValue: (s) => s.symbol },
-      { key: 'sector', label: 'Sector', render: (s) => <span className="text-[var(--text-secondary)]">{s.sector_name}</span>, sortable: true, sortValue: (s) => s.sector_name },
+      { key: 'sector', label: 'Sector', render: (s) => <span className="text-[var(--text-secondary)]">{s.l4_sector.sector_name}</span>, sortable: true, sortValue: (s) => s.l4_sector.sector_name },
       { key: 'dir', label: 'Dir', render: (s) => <span style={{ color: s.direction === 'LONG' ? 'var(--trade-long)' : 'var(--trade-short)' }}>{s.direction === 'LONG' ? 'L' : 'S'}</span> },
-      { key: 'fo', label: 'F&O', render: (s) => <span style={{ color: s.fo_eligible ? 'var(--trade-long)' : 'var(--trade-short)' }}>{s.fo_eligible ? '✓' : '✗'}</span> },
-      { key: 'ban', label: 'Ban', render: (s) => <span style={{ color: s.fo_ban ? 'var(--trade-short)' : 'var(--trade-long)' }}>{s.fo_ban ? 'BAN' : '—'}</span> },
-      { key: 'earn', label: 'Earn', render: (s) => <span style={{ color: s.earnings_flag !== 'None' ? 'var(--trade-neutral)' : 'var(--text-faint)' }}>{s.earnings_flag !== 'None' ? s.earnings_flag : '—'}</span> },
-      { key: 'mwpl', label: 'MWPL', render: (s) => <span className="text-[var(--text-secondary)]">{s.mwpl_status !== 'None' ? s.mwpl_status : '—'}</span> },
+      { key: 'fo', label: 'F&O', render: (s) => <span style={{ color: s.l2_universe.fo_eligible ? 'var(--trade-long)' : 'var(--trade-short)' }}>{s.l2_universe.fo_eligible ? '✓' : '✗'}</span> },
+      { key: 'ban', label: 'Ban', render: (s) => <span style={{ color: s.l2_universe.fo_ban ? 'var(--trade-short)' : 'var(--trade-long)' }}>{s.l2_universe.fo_ban ? 'BAN' : '—'}</span> },
+      { key: 'earn', label: 'Earn', render: (s) => <span style={{ color: s.l2_universe.earnings_flag !== 'None' ? 'var(--trade-neutral)' : 'var(--text-faint)' }}>{s.l2_universe.earnings_flag !== 'None' ? s.l2_universe.earnings_flag : '—'}</span> },
+      { key: 'mwpl', label: 'MWPL', render: (s) => <span className="text-[var(--text-secondary)]">{s.l2_universe.mwpl_status !== 'None' ? s.l2_universe.mwpl_status : '—'}</span> },
       {
         key: 'lqs',
         label: 'LQS',
         sortable: true,
-        sortValue: (s) => s.lqs,
+        sortValue: (s) => s.l2_universe.lqs_score,
         align: 'right',
         render: (s) => (
           <span
             style={{
               color:
-                s.lqs > 0.85
+                s.l2_universe.lqs_score > 0.85
                   ? 'var(--trade-long)'
-                  : s.lqs > 0.7
+                  : s.l2_universe.lqs_score > 0.7
                     ? 'var(--trade-neutral)'
                     : 'var(--trade-short)',
             }}
           >
-            {(s.lqs * 100).toFixed(0)}
+            {(s.l2_universe.lqs_score * 100).toFixed(0)}
           </span>
         ),
       },
@@ -215,14 +212,14 @@ function L2View({ snapshot }: { snapshot: SimSnapshot }) {
             className="text-[9px]"
             style={{
               color:
-                s.liquidity_quality === 'Excellent'
+                s.l2_universe.liquidity_quality === 'Excellent'
                   ? 'var(--trade-long)'
-                  : s.liquidity_quality === 'Good'
+                  : s.l2_universe.liquidity_quality === 'Good'
                     ? 'var(--trade-neutral)'
                     : 'var(--text-tertiary)',
             }}
           >
-            {s.liquidity_quality}
+            {s.l2_universe.liquidity_quality}
           </span>
         ),
       },
@@ -302,19 +299,19 @@ function L2View({ snapshot }: { snapshot: SimSnapshot }) {
 /* ═══════════════════════════════════════════════════════
    L3 — Signals
    ═══════════════════════════════════════════════════════ */
-function L3View({ snapshot }: { snapshot: SimSnapshot }) {
-  const all = useAllStocks(snapshot);
+function L3View({ stocks, ctx: _ctx }: { stocks: SymbolFactorBreakdown[]; ctx: MarketContextFrame }) {
+  const all = useAllStocks(stocks);
   const [sortKey, setSortKey] = useState<string | undefined>();
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [selectedSym, setSelectedSym] = useState<string | null>(null);
 
-  const emaAligned = all.filter((s) => s.ema_aligned).length;
-  const aboveVwap = all.filter((s) => s.above_vwap).length;
-  const adxStrong = all.filter((s) => s.adx > 25).length;
-  const rsiExtreme = all.filter((s) => s.rsi > 70 || s.rsi < 30).length;
+  const emaAligned = all.filter((s) => s.l3_signals.ema_aligned).length;
+  const aboveVwap = all.filter((s) => s.l3_signals.above_vwap).length;
+  const adxStrong = all.filter((s) => s.l3_signals.adx > 25).length;
+  const rsiExtreme = all.filter((s) => s.l3_signals.rsi > 70 || s.l3_signals.rsi < 30).length;
 
   const rsiHist = useMemo(
-    () => binValues(all.map((s) => s.rsi), 10, 10, 100, (v) => `${v}`),
+    () => binValues(all.map((s) => s.l3_signals.rsi), 10, 10, 100, (v) => `${v}`),
     [all],
   );
 
@@ -322,14 +319,14 @@ function L3View({ snapshot }: { snapshot: SimSnapshot }) {
     () => [
       { key: 'symbol', label: 'Symbol', render: (s) => <span className="font-semibold">{s.symbol}</span>, sortable: true, sortValue: (s) => s.symbol },
       { key: 'dir', label: 'Dir', render: (s) => <span style={{ color: s.direction === 'LONG' ? 'var(--trade-long)' : 'var(--trade-short)' }}>{s.direction === 'LONG' ? 'L' : 'S'}</span> },
-      { key: 'ema', label: 'EMA', render: (s) => <span style={{ color: s.ema_aligned ? 'var(--trade-long)' : 'var(--trade-short)' }}>{s.ema_aligned ? '✓' : '✗'}</span> },
-      { key: 'st', label: 'ST', render: (s) => <span style={{ color: s.supertrend_dir > 0 ? 'var(--trade-long)' : 'var(--trade-short)' }}>{s.supertrend_dir > 0 ? '↑' : '↓'}</span> },
-      { key: 'adx', label: 'ADX', sortable: true, sortValue: (s) => s.adx, align: 'right', render: (s) => <span style={{ color: s.adx > 25 ? 'var(--trade-long)' : 'var(--text-tertiary)' }}>{s.adx.toFixed(0)}</span> },
-      { key: 'rsi', label: 'RSI', sortable: true, sortValue: (s) => s.rsi, align: 'right', render: (s) => <span style={{ color: s.rsi > 70 ? 'var(--trade-short)' : s.rsi < 30 ? 'var(--trade-long)' : 'var(--text-secondary)' }}>{s.rsi.toFixed(0)}</span> },
-      { key: 'macd', label: 'MACD', sortable: true, sortValue: (s) => s.macd_hist, align: 'right', render: (s) => <span style={{ color: s.macd_hist > 0 ? 'var(--trade-long)' : 'var(--trade-short)' }}>{s.macd_hist > 0 ? '+' : ''}{s.macd_hist.toFixed(2)}</span> },
-      { key: 'atr', label: 'ATR%', sortable: true, sortValue: (s) => s.atr_pct, align: 'right', render: (s) => <span>{s.atr_pct.toFixed(2)}</span> },
-      { key: 'bb', label: 'BB%', sortable: true, sortValue: (s) => s.bb_width, align: 'right', render: (s) => <span>{s.bb_width.toFixed(1)}</span> },
-      { key: 'vwap', label: 'VWAP', render: (s) => <span style={{ color: s.above_vwap ? 'var(--trade-long)' : 'var(--trade-short)' }}>{s.above_vwap ? '↑' : '↓'}</span> },
+      { key: 'ema', label: 'EMA', render: (s) => <span style={{ color: s.l3_signals.ema_aligned ? 'var(--trade-long)' : 'var(--trade-short)' }}>{s.l3_signals.ema_aligned ? '✓' : '✗'}</span> },
+      { key: 'st', label: 'ST', render: (s) => <span style={{ color: s.l3_signals.supertrend_dir > 0 ? 'var(--trade-long)' : 'var(--trade-short)' }}>{s.l3_signals.supertrend_dir > 0 ? '↑' : '↓'}</span> },
+      { key: 'adx', label: 'ADX', sortable: true, sortValue: (s) => s.l3_signals.adx, align: 'right', render: (s) => <span style={{ color: s.l3_signals.adx > 25 ? 'var(--trade-long)' : 'var(--text-tertiary)' }}>{s.l3_signals.adx.toFixed(0)}</span> },
+      { key: 'rsi', label: 'RSI', sortable: true, sortValue: (s) => s.l3_signals.rsi, align: 'right', render: (s) => <span style={{ color: s.l3_signals.rsi > 70 ? 'var(--trade-short)' : s.l3_signals.rsi < 30 ? 'var(--trade-long)' : 'var(--text-secondary)' }}>{s.l3_signals.rsi.toFixed(0)}</span> },
+      { key: 'macd', label: 'MACD', sortable: true, sortValue: (s) => s.l3_signals.macd_hist, align: 'right', render: (s) => <span style={{ color: s.l3_signals.macd_hist > 0 ? 'var(--trade-long)' : 'var(--trade-short)' }}>{s.l3_signals.macd_hist > 0 ? '+' : ''}{s.l3_signals.macd_hist.toFixed(2)}</span> },
+      { key: 'atr', label: 'ATR%', sortable: true, sortValue: (s) => s.l3_signals.atr_pct, align: 'right', render: (s) => <span>{s.l3_signals.atr_pct.toFixed(2)}</span> },
+      { key: 'bb', label: 'BB%', sortable: true, sortValue: (s) => s.l3_signals.bb_width, align: 'right', render: (s) => <span>{s.l3_signals.bb_width.toFixed(1)}</span> },
+      { key: 'vwap', label: 'VWAP', render: (s) => <span style={{ color: s.l3_signals.above_vwap ? 'var(--trade-long)' : 'var(--trade-short)' }}>{s.l3_signals.above_vwap ? '↑' : '↓'}</span> },
     ],
     [],
   );
@@ -376,22 +373,22 @@ function L3View({ snapshot }: { snapshot: SimSnapshot }) {
 /* ═══════════════════════════════════════════════════════
    L4 — Sector
    ═══════════════════════════════════════════════════════ */
-function L4View({ snapshot }: { snapshot: SimSnapshot }) {
-  const all = useAllStocks(snapshot);
+function L4View({ stocks, ctx: _ctx }: { stocks: SymbolFactorBreakdown[]; ctx: MarketContextFrame }) {
+  const all = useAllStocks(stocks);
 
   const sectorData = useMemo(
     () =>
       SECTORS.map((s) => {
-        const stocks = all.filter((st) => st.sector_id === s.id);
-        const longs = stocks.filter((st) => st.direction === 'LONG').length;
-        const shorts = stocks.filter((st) => st.direction === 'SHORT').length;
-        const avgRs = avg(stocks.map((st) => st.rs_ratio));
-        const avgMom = avg(stocks.map((st) => st.rs_momentum));
-        const avgRoc = avg(stocks.map((st) => st.roc_20));
+        const sectorStocks = all.filter((st) => st.l4_sector.sector_id === s.id);
+        const longs = sectorStocks.filter((st) => st.direction === 'LONG').length;
+        const shorts = sectorStocks.filter((st) => st.direction === 'SHORT').length;
+        const avgRs = avg(sectorStocks.map((st) => st.l4_sector.rs_ratio));
+        const avgMom = avg(sectorStocks.map((st) => st.l4_sector.rs_momentum));
+        const avgRoc = avg(sectorStocks.map((st) => st.l3_signals.roc_20));
         return {
           sector: s.name,
           id: s.id,
-          count: stocks.length,
+          count: sectorStocks.length,
           longs,
           shorts,
           avgRs,
@@ -407,8 +404,8 @@ function L4View({ snapshot }: { snapshot: SimSnapshot }) {
   const leadingPicks = useMemo(
     () =>
       all
-        .filter((s) => s.rs_ratio > 1.02 && s.rs_momentum > 1)
-        .sort((a, b) => b.rs_ratio - a.rs_ratio)
+        .filter((s) => s.l4_sector.rs_ratio > 1.02 && s.l4_sector.rs_momentum > 1)
+        .sort((a, b) => b.l4_sector.rs_ratio - a.l4_sector.rs_ratio)
         .slice(0, 8),
     [all],
   );
@@ -474,7 +471,7 @@ function L4View({ snapshot }: { snapshot: SimSnapshot }) {
                 className="flex items-center gap-1.5 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-surface-raised)]/30 px-2 py-1"
               >
                 <span className="text-[11px] font-semibold">{s.symbol}</span>
-                <span className="text-[9px] text-[var(--text-tertiary)]">{s.sector_name}</span>
+                <span className="text-[9px] text-[var(--text-tertiary)]">{s.l4_sector.sector_name}</span>
                 <span
                   className="font-mono text-[10px] tabular-nums"
                   style={{ color: s.direction === 'LONG' ? 'var(--trade-long)' : 'var(--trade-short)' }}
@@ -482,7 +479,7 @@ function L4View({ snapshot }: { snapshot: SimSnapshot }) {
                   {s.direction === 'LONG' ? 'L' : 'S'}
                 </span>
                 <span className="font-mono text-[9px] text-[var(--text-secondary)]">
-                  RS {s.rs_ratio.toFixed(2)}
+                  RS {s.l4_sector.rs_ratio.toFixed(2)}
                 </span>
               </div>
             ))}
@@ -496,13 +493,13 @@ function L4View({ snapshot }: { snapshot: SimSnapshot }) {
 /* ═══════════════════════════════════════════════════════
    L5 — Scoring
    ═══════════════════════════════════════════════════════ */
-function L5View({ snapshot }: { snapshot: SimSnapshot }) {
-  const all = useAllStocks(snapshot);
+function L5View({ stocks, ctx: _ctx }: { stocks: SymbolFactorBreakdown[]; ctx: MarketContextFrame }) {
+  const all = useAllStocks(stocks);
   const [sortKey, setSortKey] = useState<string | undefined>();
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [selectedSym, setSelectedSym] = useState<string | null>(null);
 
-  const scores = all.map((s) => s.score);
+  const scores = all.map((s) => s.l5_scores.total);
   const minScore = Math.min(...scores);
   const maxScore = Math.max(...scores);
   const avgScore = avg(scores);
@@ -524,12 +521,12 @@ function L5View({ snapshot }: { snapshot: SimSnapshot }) {
   const weights = [0.2, 0.18, 0.15, 0.12, 0.13, 0.12, 0.1];
   const factorAvgs = factorMeta.map((f, i) => ({
     ...f,
-    avg: avg(all.map((s) => (s as any)[f.key] as number)),
+    avg: avg(all.map((s) => (s.l5_scores as any)[f.key.replace('f', 'f')] as number)),
     weight: weights[i],
   }));
 
   const topScored = useMemo(
-    () => [...all].sort((a, b) => b.score - a.score),
+    () => [...all].sort((a, b) => b.l5_scores.total - a.l5_scores.total),
     [all],
   );
 
@@ -537,15 +534,15 @@ function L5View({ snapshot }: { snapshot: SimSnapshot }) {
     () => [
       { key: 'symbol', label: 'Symbol', render: (s) => <span className="font-semibold">{s.symbol}</span>, sortable: true, sortValue: (s) => s.symbol },
       { key: 'dir', label: 'Dir', render: (s) => <span style={{ color: s.direction === 'LONG' ? 'var(--trade-long)' : 'var(--trade-short)' }}>{s.direction === 'LONG' ? 'L' : 'S'}</span> },
-      { key: 'sector', label: 'Sector', render: (s) => <span className="text-[var(--text-secondary)]">{s.sector_name}</span> },
-      { key: 'score', label: 'Score', sortable: true, sortValue: (s) => s.score, align: 'right', render: (s) => <span className="font-bold" style={{ color: s.score >= 75 ? 'var(--trade-long)' : s.score >= 60 ? 'var(--trade-neutral)' : 'var(--trade-short)' }}>{s.score.toFixed(1)}</span> },
-      { key: 'trend', label: 'T', sortable: true, sortValue: (s) => s.f1_trend, align: 'right', render: (s) => <span>{s.f1_trend}</span> },
-      { key: 'mom', label: 'M', sortable: true, sortValue: (s) => s.f2_momentum, align: 'right', render: (s) => <span>{s.f2_momentum}</span> },
-      { key: 'vol', label: 'V', sortable: true, sortValue: (s) => s.f3_volume, align: 'right', render: (s) => <span>{s.f3_volume}</span> },
-      { key: 'vp', label: 'VP', sortable: true, sortValue: (s) => s.f4_volpos, align: 'right', render: (s) => <span>{s.f4_volpos}</span> },
-      { key: 'str', label: 'St', sortable: true, sortValue: (s) => s.f5_structure, align: 'right', render: (s) => <span>{s.f5_structure}</span> },
-      { key: 'sec', label: 'Sc', sortable: true, sortValue: (s) => s.f6_sector, align: 'right', render: (s) => <span>{s.f6_sector}</span> },
-      { key: 'risk', label: 'R', sortable: true, sortValue: (s) => s.f7_risk, align: 'right', render: (s) => <span>{s.f7_risk}</span> },
+      { key: 'sector', label: 'Sector', render: (s) => <span className="text-[var(--text-secondary)]">{s.l4_sector.sector_name}</span> },
+      { key: 'score', label: 'Score', sortable: true, sortValue: (s) => s.l5_scores.total, align: 'right', render: (s) => <span className="font-bold" style={{ color: s.l5_scores.total >= 75 ? 'var(--trade-long)' : s.l5_scores.total >= 60 ? 'var(--trade-neutral)' : 'var(--trade-short)' }}>{s.l5_scores.total.toFixed(1)}</span> },
+      { key: 'trend', label: 'T', sortable: true, sortValue: (s) => s.l5_scores.f1_trend, align: 'right', render: (s) => <span>{s.l5_scores.f1_trend}</span> },
+      { key: 'mom', label: 'M', sortable: true, sortValue: (s) => s.l5_scores.f2_momentum, align: 'right', render: (s) => <span>{s.l5_scores.f2_momentum}</span> },
+      { key: 'vol', label: 'V', sortable: true, sortValue: (s) => s.l5_scores.f3_volume, align: 'right', render: (s) => <span>{s.l5_scores.f3_volume}</span> },
+      { key: 'vp', label: 'VP', sortable: true, sortValue: (s) => s.l5_scores.f4_volpos, align: 'right', render: (s) => <span>{s.l5_scores.f4_volpos}</span> },
+      { key: 'str', label: 'St', sortable: true, sortValue: (s) => s.l5_scores.f5_structure, align: 'right', render: (s) => <span>{s.l5_scores.f5_structure}</span> },
+      { key: 'sec', label: 'Sc', sortable: true, sortValue: (s) => s.l5_scores.f6_sector, align: 'right', render: (s) => <span>{s.l5_scores.f6_sector}</span> },
+      { key: 'risk', label: 'R', sortable: true, sortValue: (s) => s.l5_scores.f7_risk, align: 'right', render: (s) => <span>{s.l5_scores.f7_risk}</span> },
     ],
     [],
   );
@@ -606,21 +603,22 @@ function L5View({ snapshot }: { snapshot: SimSnapshot }) {
 /* ═══════════════════════════════════════════════════════
    L6 — Ranking
    ═══════════════════════════════════════════════════════ */
-function L6View({ snapshot }: { snapshot: SimSnapshot }) {
-  const all = useAllStocks(snapshot);
+function L6View({ stocks, ctx: _ctx }: { stocks: SymbolFactorBreakdown[]; ctx: MarketContextFrame }) {
+  const all = useAllStocks(stocks);
   const [sortKey, setSortKey] = useState<string | undefined>();
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
-  const mov = { NEW: 0, UP: 0, DOWN: 0, STABLE: 0 };
+  const mov = { NEW: 0, UP: 0, DOWN: 0, STABLE: 0 } as Record<string, number>;
   all.forEach((s) => {
-    mov[s.rank_movement] = (mov[s.rank_movement] ?? 0) + 1;
+    const rm = s.l6_ranking.rank_movement;
+    mov[rm] = (mov[rm] ?? 0) + 1;
   });
 
   const sectorConc = useMemo(
     () =>
       SECTORS.map((s) => ({
         label: s.name.slice(0, 4),
-        value: all.filter((st) => st.sector_id === s.id).length,
+        value: all.filter((st) => st.l4_sector.sector_id === s.id).length,
       })).filter((s) => s.value > 0),
     [all],
   );
@@ -628,16 +626,17 @@ function L6View({ snapshot }: { snapshot: SimSnapshot }) {
   const columns: StockColumn[] = useMemo(
     () => [
       { key: 'symbol', label: 'Symbol', render: (s) => <span className="font-semibold">{s.symbol}</span>, sortable: true, sortValue: (s) => s.symbol },
-      { key: 'sector', label: 'Sector', render: (s) => <span className="text-[var(--text-secondary)]">{s.sector_name}</span> },
+      { key: 'sector', label: 'Sector', render: (s) => <span className="text-[var(--text-secondary)]">{s.l4_sector.sector_name}</span> },
       { key: 'dir', label: 'Dir', render: (s) => <span style={{ color: s.direction === 'LONG' ? 'var(--trade-long)' : 'var(--trade-short)' }}>{s.direction === 'LONG' ? 'L' : 'S'}</span> },
-      { key: 'score', label: 'Score', sortable: true, sortValue: (s) => s.score, align: 'right', render: (s) => <span className="font-bold">{s.score.toFixed(1)}</span> },
-      { key: 'dscore', label: 'ΔScore', sortable: true, sortValue: (s) => s.score_change, align: 'right', render: (s) => <span style={{ color: s.score_change > 0 ? 'var(--trade-long)' : s.score_change < 0 ? 'var(--trade-short)' : 'var(--text-tertiary)' }}>{s.score_change >= 0 ? '+' : ''}{s.score_change.toFixed(2)}</span> },
+      { key: 'score', label: 'Score', sortable: true, sortValue: (s) => s.l5_scores.total, align: 'right', render: (s) => <span className="font-bold">{s.l5_scores.total.toFixed(1)}</span> },
+      { key: 'dscore', label: 'ΔScore', sortable: true, sortValue: (s) => s.l6_ranking.score_change, align: 'right', render: (s) => <span style={{ color: s.l6_ranking.score_change > 0 ? 'var(--trade-long)' : s.l6_ranking.score_change < 0 ? 'var(--trade-short)' : 'var(--text-tertiary)' }}>{s.l6_ranking.score_change >= 0 ? '+' : ''}{s.l6_ranking.score_change.toFixed(2)}</span> },
       {
         key: 'movement',
         label: 'Move',
         render: (s) => {
-          const c = s.rank_movement === 'NEW' ? 'var(--accent)' : s.rank_movement === 'UP' ? 'var(--trade-long)' : s.rank_movement === 'DOWN' ? 'var(--trade-short)' : 'var(--text-tertiary)';
-          return <span className="font-bold text-[10px]" style={{ color: c }}>{s.rank_movement}</span>;
+          const rm = s.l6_ranking.rank_movement;
+          const c = rm === 'NEW' ? 'var(--accent)' : rm === 'UP' ? 'var(--trade-long)' : rm === 'DOWN' ? 'var(--trade-short)' : 'var(--text-tertiary)';
+          return <span className="font-bold text-[10px]" style={{ color: c }}>{rm}</span>;
         },
       },
     ],
@@ -702,8 +701,8 @@ function L6View({ snapshot }: { snapshot: SimSnapshot }) {
 /* ═══════════════════════════════════════════════════════
    L7 — Confluence
    ═══════════════════════════════════════════════════════ */
-function L7View({ snapshot }: { snapshot: SimSnapshot }) {
-  const all = useAllStocks(snapshot);
+function L7View({ stocks, ctx: _ctx }: { stocks: SymbolFactorBreakdown[]; ctx: MarketContextFrame }) {
+  const all = useAllStocks(stocks);
   const [sortKey, setSortKey] = useState<string | undefined>();
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
@@ -719,7 +718,8 @@ function L7View({ snapshot }: { snapshot: SimSnapshot }) {
   const dist = useMemo(() => {
     const d: Record<number, number> = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 };
     all.forEach((s) => {
-      d[s.confluence_score] = (d[s.confluence_score] ?? 0) + 1;
+      const cs = s.l7_confluence.score;
+      d[cs] = (d[cs] ?? 0) + 1;
     });
     return Object.entries(d).map(([k, v]) => ({ label: k, value: v }));
   }, [all]);
@@ -728,7 +728,7 @@ function L7View({ snapshot }: { snapshot: SimSnapshot }) {
     const keys = Object.keys(checkLabels);
     return keys.map((k) => ({
       label: checkLabels[k],
-      pass: all.filter((s) => s.checks[k]).length,
+      pass: all.filter((s) => s.l7_confluence.checks[k]).length,
       total: all.length,
     }));
   }, [all]);
@@ -737,13 +737,13 @@ function L7View({ snapshot }: { snapshot: SimSnapshot }) {
     () => [
       { key: 'symbol', label: 'Symbol', render: (s) => <span className="font-semibold">{s.symbol}</span>, sortable: true, sortValue: (s) => s.symbol },
       { key: 'dir', label: 'Dir', render: (s) => <span style={{ color: s.direction === 'LONG' ? 'var(--trade-long)' : 'var(--trade-short)' }}>{s.direction === 'LONG' ? 'L' : 'S'}</span> },
-      { key: 'score', label: 'Score', sortable: true, sortValue: (s) => s.confluence_score, align: 'right', render: (s) => <span className="font-bold">{s.confluence_score}/6</span> },
+      { key: 'score', label: 'Score', sortable: true, sortValue: (s) => s.l7_confluence.score, align: 'right', render: (s) => <span className="font-bold">{s.l7_confluence.score}/6</span> },
       ...Object.entries(checkLabels).map(([k, lbl]) => ({
         key: k,
         label: lbl.slice(0, 5),
-        render: (s: SimStock) => (
-          <span style={{ color: s.checks[k] ? 'var(--trade-long)' : 'var(--trade-short)' }}>
-            {s.checks[k] ? '✓' : '✗'}
+        render: (s: SymbolFactorBreakdown) => (
+          <span style={{ color: s.l7_confluence.checks[k] ? 'var(--trade-long)' : 'var(--trade-short)' }}>
+            {s.l7_confluence.checks[k] ? '✓' : '✗'}
           </span>
         ),
       })),
@@ -808,16 +808,18 @@ function L7View({ snapshot }: { snapshot: SimSnapshot }) {
 /* ═══════════════════════════════════════════════════════
    L8 — Thesis
    ═══════════════════════════════════════════════════════ */
-function L8View({ snapshot }: { snapshot: SimSnapshot }) {
-  const all = useAllStocks(snapshot);
+function L8View({ stocks, ctx: _ctx }: { stocks: SymbolFactorBreakdown[]; ctx: MarketContextFrame }) {
+  const all = useAllStocks(stocks);
 
-  const grades = { ATTRACTIVE: 0, MARGINAL: 0, UNATTRACTIVE: 0 };
+  const grades: Record<string, number> = { ATTRACTIVE: 0, MARGINAL: 0, UNATTRACTIVE: 0 };
   const tiers: Record<string, number> = {};
   const setups: Record<string, number> = {};
   all.forEach((s) => {
-    grades[s.grade as keyof typeof grades] = (grades[s.grade as keyof typeof grades] ?? 0) + 1;
-    tiers[s.tier] = (tiers[s.tier] ?? 0) + 1;
-    const lbl = s.setup_label;
+    const g = s.l8_thesis.grade;
+    grades[g] = (grades[g] ?? 0) + 1;
+    const tier = s.l8_thesis.actionability_tier;
+    tiers[tier] = (tiers[tier] ?? 0) + 1;
+    const lbl = setupTypeLabels[s.l8_thesis.setup_type] ?? String(s.l8_thesis.setup_type);
     setups[lbl] = (setups[lbl] ?? 0) + 1;
   });
 
@@ -825,7 +827,7 @@ function L8View({ snapshot }: { snapshot: SimSnapshot }) {
   const maxSetupCount = Math.max(...setupEntries.map(([, v]) => v), 1);
 
   const theses = useMemo(
-    () => all.filter((s) => s.grade !== 'UNATTRACTIVE'),
+    () => all.filter((s) => s.l8_thesis.grade !== 'UNATTRACTIVE'),
     [all],
   );
 
@@ -896,34 +898,34 @@ function L8View({ snapshot }: { snapshot: SimSnapshot }) {
                 {theses.map((s) => (
                   <tr key={s.symbol} className="border-b border-[var(--border-subtle)]/50 hover:bg-[var(--bg-surface-raised)]/30">
                     <td className="px-2 py-1.5 font-semibold">{s.symbol}</td>
-                    <td className="px-2 py-1.5 text-[var(--text-secondary)]">{s.setup_label}</td>
-                    <td className="px-2 py-1.5 text-right font-mono tabular-nums text-[var(--trade-long)]">{s.trigger.toFixed(1)}</td>
-                    <td className="px-2 py-1.5 text-right font-mono tabular-nums text-[var(--trade-short)]">{s.invalidation.toFixed(1)}</td>
-                    <td className="px-2 py-1.5 text-right font-mono tabular-nums text-[var(--trade-neutral)]">{s.t1.toFixed(1)}</td>
-                    <td className="px-2 py-1.5 text-right font-mono tabular-nums text-[var(--text-secondary)]">{s.t2.toFixed(1)}</td>
+                    <td className="px-2 py-1.5 text-[var(--text-secondary)]">{setupTypeLabels[s.l8_thesis.setup_type] ?? s.l8_thesis.setup_type}</td>
+                    <td className="px-2 py-1.5 text-right font-mono tabular-nums text-[var(--trade-long)]">{s.l8_thesis.trigger.toFixed(1)}</td>
+                    <td className="px-2 py-1.5 text-right font-mono tabular-nums text-[var(--trade-short)]">{s.l8_thesis.invalidation.toFixed(1)}</td>
+                    <td className="px-2 py-1.5 text-right font-mono tabular-nums text-[var(--trade-neutral)]">{s.l8_thesis.t1.toFixed(1)}</td>
+                    <td className="px-2 py-1.5 text-right font-mono tabular-nums text-[var(--text-secondary)]">{s.l8_thesis.t2.toFixed(1)}</td>
                     <td
                       className="px-2 py-1.5 text-right font-mono tabular-nums font-bold"
                       style={{
                         color:
-                          s.net_rr >= 1.5 ? 'var(--trade-long)' : s.net_rr >= 1.0 ? 'var(--trade-neutral)' : 'var(--trade-short)',
+                          s.l8_thesis.net_rr >= 1.5 ? 'var(--trade-long)' : s.l8_thesis.net_rr >= 1.0 ? 'var(--trade-neutral)' : 'var(--trade-short)',
                       }}
                     >
-                      {s.net_rr.toFixed(2)}
+                      {s.l8_thesis.net_rr.toFixed(2)}
                     </td>
                     <td className="px-2 py-1.5 text-center">
-                      <VerdictPill verdict={s.grade === 'ATTRACTIVE' ? 'PASS' : 'WARN'} />
+                      <VerdictPill verdict={s.l8_thesis.grade === 'ATTRACTIVE' ? 'PASS' : 'WARN'} />
                     </td>
                     <td className="px-2 py-1.5 text-center">
                       <span
                         className="rounded px-1 py-0.5 text-[9px] font-semibold"
                         style={{
                           background:
-                            s.tier === 'Tradeable' ? 'var(--trade-long-dim)' : s.tier === 'Constrained' ? 'var(--trade-neutral-dim)' : 'transparent',
+                            s.l8_thesis.actionability_tier === 'Tradeable' ? 'var(--trade-long-dim)' : s.l8_thesis.actionability_tier === 'Constrained' ? 'var(--trade-neutral-dim)' : 'transparent',
                           color:
-                            s.tier === 'Tradeable' ? 'var(--trade-long)' : s.tier === 'Constrained' ? 'var(--trade-neutral)' : 'var(--text-tertiary)',
+                            s.l8_thesis.actionability_tier === 'Tradeable' ? 'var(--trade-long)' : s.l8_thesis.actionability_tier === 'Constrained' ? 'var(--trade-neutral)' : 'var(--text-tertiary)',
                         }}
                       >
-                        {s.tier}
+                        {s.l8_thesis.actionability_tier}
                       </span>
                     </td>
                   </tr>
@@ -940,22 +942,25 @@ function L8View({ snapshot }: { snapshot: SimSnapshot }) {
 /* ═══════════════════════════════════════════════════════
    L9 — Monitor
    ═══════════════════════════════════════════════════════ */
-function L9View({ snapshot }: { snapshot: SimSnapshot }) {
-  const all = useAllStocks(snapshot);
+function L9View({ stocks, ctx: _ctx }: { stocks: SymbolFactorBreakdown[]; ctx: MarketContextFrame }) {
+  const all = useAllStocks(stocks);
 
   const states = { PENDING: 0, TRIGGERED: 0, ACTIVE: 0, T1_HIT: 0, T2_HIT: 0, STOPPED_OUT: 0, INVALIDATED: 0, EXPIRED: 0 };
   all.forEach((s) => {
-    const st = s.state as keyof typeof states;
+    const st = (s.l9_monitor?.state ?? 'PENDING') as keyof typeof states;
     if (states[st] !== undefined) states[st]++;
   });
 
-  const liveTheses = useMemo(() => all.filter((s) => s.state !== 'PENDING'), [all]);
-  const activeTheses = useMemo(() => all.filter((s) => s.state === 'ACTIVE' || s.state === 'TRIGGERED' || s.state === 'T1_HIT'), [all]);
+  const liveTheses = useMemo(() => all.filter((s) => (s.l9_monitor?.state ?? 'PENDING') !== 'PENDING'), [all]);
+  const activeTheses = useMemo(() => all.filter((s) => {
+    const st = s.l9_monitor?.state ?? '';
+    return st === 'ACTIVE' || st === 'TRIGGERED' || st === 'T1_HIT';
+  }), [all]);
 
-  const avgMfe = avg(liveTheses.map((s) => s.mfe_R));
-  const avgMae = avg(liveTheses.map((s) => s.mae_R));
-  const bestMfe = Math.max(...liveTheses.map((s) => s.mfe_R), 0);
-  const worstMae = Math.min(...liveTheses.map((s) => s.mae_R), 0);
+  const avgMfe = avg(liveTheses.map((s) => s.l9_monitor?.mfe_R ?? 0));
+  const avgMae = avg(liveTheses.map((s) => s.l9_monitor?.mae_R ?? 0));
+  const bestMfe = Math.max(...liveTheses.map((s) => s.l9_monitor?.mfe_R ?? 0), 0);
+  const worstMae = Math.min(...liveTheses.map((s) => s.l9_monitor?.mae_R ?? 0), 0);
 
   return (
     <div className="space-y-3">
@@ -1047,7 +1052,9 @@ function L9View({ snapshot }: { snapshot: SimSnapshot }) {
                 </tr>
               </thead>
               <tbody>
-                {liveTheses.map((s) => (
+                {liveTheses.map((s) => {
+                  const st = s.l9_monitor?.state ?? 'PENDING';
+                  return (
                   <tr key={s.symbol} className="border-b border-[var(--border-subtle)]/50 hover:bg-[var(--bg-surface-raised)]/30">
                     <td className="px-2 py-1.5 font-semibold">{s.symbol}</td>
                     <td className="px-2 py-1.5 text-center">
@@ -1055,37 +1062,38 @@ function L9View({ snapshot }: { snapshot: SimSnapshot }) {
                         className="rounded px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide"
                         style={{
                           background:
-                            s.state === 'ACTIVE' ? 'var(--trade-long-dim)' :
-                            s.state === 'T1_HIT' ? 'var(--accent-dim)' :
-                            s.state === 'TRIGGERED' ? 'var(--trade-neutral-dim)' :
+                            st === 'ACTIVE' ? 'var(--trade-long-dim)' :
+                            st === 'T1_HIT' ? 'var(--accent-dim)' :
+                            st === 'TRIGGERED' ? 'var(--trade-neutral-dim)' :
                             'var(--bg-surface-raised)',
                           color:
-                            s.state === 'ACTIVE' ? 'var(--trade-long)' :
-                            s.state === 'T1_HIT' ? 'var(--accent)' :
-                            s.state === 'TRIGGERED' ? 'var(--trade-neutral)' :
+                            st === 'ACTIVE' ? 'var(--trade-long)' :
+                            st === 'T1_HIT' ? 'var(--accent)' :
+                            st === 'TRIGGERED' ? 'var(--trade-neutral)' :
                             'var(--text-tertiary)',
                         }}
                       >
-                        {s.state === 'T1_HIT' ? 'T1' : s.state.slice(0, 4)}
+                        {st === 'T1_HIT' ? 'T1' : st.slice(0, 4)}
                       </span>
                     </td>
                     <td className="px-2 py-1.5 text-right font-mono tabular-nums text-[var(--trade-long)]">
-                      +{s.mfe_R.toFixed(2)}R
+                      +{(s.l9_monitor?.mfe_R ?? 0).toFixed(2)}R
                     </td>
                     <td className="px-2 py-1.5 text-right font-mono tabular-nums text-[var(--trade-short)]">
-                      {s.mae_R.toFixed(2)}R
+                      {(s.l9_monitor?.mae_R ?? 0).toFixed(2)}R
                     </td>
                     <td
                       className="px-2 py-1.5 text-right font-mono tabular-nums font-bold"
                       style={{
-                        color: s.net_rr >= 1.5 ? 'var(--trade-long)' : s.net_rr >= 1.0 ? 'var(--trade-neutral)' : 'var(--trade-short)',
+                        color: s.l8_thesis.net_rr >= 1.5 ? 'var(--trade-long)' : s.l8_thesis.net_rr >= 1.0 ? 'var(--trade-neutral)' : 'var(--trade-short)',
                       }}
                     >
-                      {s.net_rr.toFixed(2)}
+                      {s.l8_thesis.net_rr.toFixed(2)}
                     </td>
-                    <td className="px-2 py-1.5 text-[var(--text-secondary)]">{s.setup_label}</td>
+                    <td className="px-2 py-1.5 text-[var(--text-secondary)]">{setupTypeLabels[s.l8_thesis.setup_type] ?? s.l8_thesis.setup_type}</td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -1104,13 +1112,14 @@ function L9View({ snapshot }: { snapshot: SimSnapshot }) {
 /* ═══════════════════════════════════════════════════════
    L10 — Edge
    ═══════════════════════════════════════════════════════ */
-function L10View({ snapshot, ctx }: { snapshot: SimSnapshot; ctx: SimMarketContext }) {
-  const all = useAllStocks(snapshot);
+function L10View({ stocks, ctx }: { stocks: SymbolFactorBreakdown[]; ctx: MarketContextFrame }) {
+  const all = useAllStocks(stocks);
 
   const tiers = useMemo(() => {
-    const t: Record<number, SimStock[]> = { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] };
+    const t: Record<number, SymbolFactorBreakdown[]> = { 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] };
     all.forEach((s) => {
-      if (t[s.edge_tier]) t[s.edge_tier].push(s);
+      const et = s.l10_edge?.edge_tier ?? 6;
+      if (t[et]) t[et].push(s);
     });
     return t;
   }, [all]);
@@ -1125,22 +1134,22 @@ function L10View({ snapshot, ctx }: { snapshot: SimSnapshot; ctx: SimMarketConte
   ];
 
   const tierHitRates = tierMeta.map((tm) => {
-    const stocks = tiers[tm.tier] ?? [];
-    const hit = stocks.length > 0 ? stocks.filter((s) => s.edge_tier <= 2).length / stocks.length : 0;
-    const n = stocks.length;
+    const tierStocks = tiers[tm.tier] ?? [];
+    const hit = tierStocks.length > 0 ? tierStocks.filter((s) => (s.l10_edge?.edge_tier ?? 6) <= 2).length / tierStocks.length : 0;
+    const n = tierStocks.length;
     const ci_lo = Math.max(0, hit - 1.96 * Math.sqrt((hit * (1 - hit)) / Math.max(n, 1)));
     const ci_hi = Math.min(1, hit + 1.96 * Math.sqrt((hit * (1 - hit)) / Math.max(n, 1)));
-    return { ...tm, hit, ci_lo, ci_hi, n, stocks };
+    return { ...tm, hit, ci_lo, ci_hi, n, stocks: tierStocks };
   });
 
   // Setup x Regime cross-tab
-  const setups = [...new Set(all.map((s) => s.setup_label))].sort();
+  const setups = [...new Set(all.map((s) => setupTypeLabels[s.l8_thesis.setup_type] ?? String(s.l8_thesis.setup_type)))].sort();
   const crossTab = useMemo(() => {
     return setups.map((setup) => ({
       setup,
-      total: all.filter((s) => s.setup_label === setup).length,
-      avgNetRr: avg(all.filter((s) => s.setup_label === setup).map((s) => s.net_rr)),
-      tradeable: all.filter((s) => s.setup_label === setup && s.tier === 'Tradeable').length,
+      total: all.filter((s) => (setupTypeLabels[s.l8_thesis.setup_type] ?? String(s.l8_thesis.setup_type)) === setup).length,
+      avgNetRr: avg(all.filter((s) => (setupTypeLabels[s.l8_thesis.setup_type] ?? String(s.l8_thesis.setup_type)) === setup).map((s) => s.l8_thesis.net_rr)),
+      tradeable: all.filter((s) => (setupTypeLabels[s.l8_thesis.setup_type] ?? String(s.l8_thesis.setup_type)) === setup && s.l8_thesis.actionability_tier === 'Tradeable').length,
     }));
   }, [all, setups]);
 
@@ -1275,7 +1284,7 @@ function L10View({ snapshot, ctx }: { snapshot: SimSnapshot; ctx: SimMarketConte
 /* ─── Layer view map ─────────────────────────────────── */
 const LAYER_VIEWS: Record<
   string,
-  (props: { snapshot: SimSnapshot; ctx: SimMarketContext }) => JSX.Element
+  (props: { stocks: SymbolFactorBreakdown[]; ctx: MarketContextFrame }) => JSX.Element
 > = {
   L1: L1View,
   L2: L2View,
@@ -1294,16 +1303,16 @@ const LAYER_VIEWS: Record<
    ═══════════════════════════════════════════════════════ */
 interface LayerInspectorProps {
   layerKey: string;
-  snapshot: SimSnapshot;
-  ctx: SimMarketContext;
+  stocks: SymbolFactorBreakdown[];
+  ctx: MarketContextFrame;
   onClose: () => void;
   onSwitchLayer: (key: string) => void;
-  onSelectStock: (stock: SimStock) => void;
+  onSelectStock: (stock: SymbolFactorBreakdown) => void;
 }
 
 export function LayerInspector({
   layerKey,
-  snapshot,
+  stocks,
   ctx,
   onClose,
   onSwitchLayer,
@@ -1369,7 +1378,7 @@ export function LayerInspector({
       {/* Body */}
       <div className="overflow-y-auto p-3" style={{ maxHeight: '70vh' }}>
         {ViewComponent ? (
-          <ViewComponent snapshot={snapshot} ctx={ctx} />
+          <ViewComponent stocks={stocks} ctx={ctx} />
         ) : (
           <div className="flex h-32 items-center justify-center text-[11px] text-[var(--text-tertiary)]">
             No inspector view available for {layerKey}

@@ -8,7 +8,6 @@ import { DataAgeBadge } from './DataAgeBadge';
 import { MockBadge } from './MockBadge';
 import type { RankingEntry } from '@/types/api';
 import { setupTypeLabels } from '@/types/api';
-import type { SimStock } from '@/data/simTypes';
 
 type Direction = 'LONG' | 'SHORT';
 
@@ -93,7 +92,7 @@ interface DisplayRow {
   confluence_score: number;
   setup_type: number;
   actionability_tier: string;
-  // Enhanced (SimStock) — undefined when sourced from API
+  // Optional rich fields — undefined when not available from API
   price?: number;
   change_pct?: number;
   sector_name?: string;
@@ -101,8 +100,8 @@ interface DisplayRow {
   spark?: number[];
 }
 
-function toDisplayRow(e: RankingEntry | SimStock): DisplayRow {
-  const base = {
+function toDisplayRow(e: RankingEntry): DisplayRow {
+  return {
     symbol: e.symbol,
     score: e.score,
     direction: e.direction,
@@ -110,30 +109,12 @@ function toDisplayRow(e: RankingEntry | SimStock): DisplayRow {
     net_rr: e.net_rr,
     confluence_score: e.confluence_score ?? 0,
     setup_type: e.setup_type,
-  };
-
-  if ('candles' in e) {
-    // SimStock branch (has candles array that RankingEntry doesn't)
-    return {
-      ...base,
-      actionability_tier: e.tier as string,
-      price: e.price,
-      change_pct: e.change_pct,
-      sector_name: e.sector_name,
-      setup_label: e.setup_label,
-      spark: e.spark,
-    };
-  }
-
-  // RankingEntry branch
-  return {
-    ...base,
     actionability_tier: e.actionability_tier,
-    price: undefined,
-    change_pct: undefined,
-    sector_name: undefined,
-    setup_label: undefined,
-    spark: undefined,
+    price: e.price,
+    change_pct: e.change_pct,
+    sector_name: e.sector_name,
+    setup_label: e.setup_label,
+    spark: e.sparkline,
   };
 }
 
@@ -206,7 +187,7 @@ interface RankingsPanelProps {
   onSelectSymbol?: (symbol: string) => void;
   flashedSymbols?: Map<string, string>;
   /** When provided, use these entries instead of the API hook. */
-  entries?: (SimStock | RankingEntry)[];
+  entries?: RankingEntry[];
 }
 
 // ─── Component ───
@@ -222,7 +203,7 @@ export function RankingsPanel({ onSelectSymbol, flashedSymbols = new Map(), entr
 
   // Pick source
   const apiEntries: RankingEntry[] = direction === 'LONG' ? (longsData ?? []) : (shortsData ?? []);
-  const simFiltered = useMemo<(SimStock | RankingEntry)[] | null>(() => {
+  const simFiltered = useMemo<RankingEntry[] | null>(() => {
     if (!simEntries) return null;
     return simEntries.filter((s) => s.direction === direction);
   }, [simEntries, direction]);
