@@ -41,7 +41,7 @@ async def test_pending_expiry():
     t2 = make_thesis(thesis_id="t2")
     await ledger.on_create(t2)
     await ledger.on_pending("t2")
-    expired = ledger.on_pending_expiry("11:01")
+    expired = await ledger.on_pending_expiry("11:01")
     assert len(expired) == 2
     for e in expired:
         assert e["state"] == ThesisState.EXPIRED.value
