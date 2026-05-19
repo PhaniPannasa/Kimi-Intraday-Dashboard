@@ -20,6 +20,7 @@ import polars as pl
 from api.websocket_manager import manager as ws_manager
 from core.data.redis_cache import cache
 from core.data.upstox_rest import upstox_rest
+from core.data.nse_scraper import nse_scraper
 from core.session.market_session import session as market_session
 from layers.l1_market_context import L1MarketContext
 from layers.l3_signals import L3Signals, ema_aligned, detect_macd_divergence
@@ -337,6 +338,16 @@ class BarAggregator:
 NIFTY_INDEX_KEY = "NSE_INDEX|Nifty 50"
 
 
+def _check_earnings_today(symbol: str, earnings_data: list) -> str:
+    """Check if symbol has earnings announcement today."""
+    from datetime import date
+    today_str = date.today().isoformat()
+    for item in earnings_data or []:
+        if item.get("symbol") == symbol and item.get("date") == today_str:
+            return "Earnings"
+    return "None"
+
+
 class PipelineOrchestrator:
     """Drives the L1-L10 pipeline with real bar data.
 
@@ -428,6 +439,21 @@ class PipelineOrchestrator:
     async def _run_live_cycle(self):
         now = datetime.now(timezone.utc)
 
+        # L2: Fetch NSE flags once per cycle (cached for all symbols)
+        l2_flags: dict[str, dict] = {}
+        try:
+            fo_ban_list = await nse_scraper.get_fo_ban_list()
+            earnings_data = await nse_scraper.get_corporate_actions()
+            mwpl_list = await nse_scraper.get_mwpl()
+            for sym in self.symbol_map:
+                l2_flags[sym] = {
+                    "fo_ban": sym in fo_ban_list,
+                    "mwpl": "MWPL" if sym in mwpl_list else "None",
+                    "earnings": _check_earnings_today(sym, earnings_data),
+                }
+        except Exception:
+            l2_flags = {}
+
         # 1. Fetch Nifty context data
         nifty_df = None
         try:
@@ -453,6 +479,9 @@ class PipelineOrchestrator:
                 l3_df = self.l3.compute(pd_df)
 
                 signals = self._extract_l3_signals(sym, l3_df)
+                flags = l2_flags.get(sym, {})
+                signals["fo_ban"] = flags.get("fo_ban", False)
+                signals["earnings"] = flags.get("earnings") == "Earnings"
                 regime = self._current_regime()
 
                 sector_data = self._synthetic_sector_data(sym)
@@ -477,7 +506,16 @@ class PipelineOrchestrator:
                 continue
 
         # 3. L1: market context
-        vix_value = 15.0  # Placeholder — integrate real VIX feed later
+        # Real VIX from Upstox LTPC
+        vix_value = 15.0
+        try:
+            vix_resp = await self.upstox_rest.get_ltpc(["NSE_INDEX|India VIX"])
+            vix_data = vix_resp.get("data", {})
+            vix_ltp = vix_data.get("NSE_INDEX|India VIX", {}).get("ltp")
+            if vix_ltp is not None:
+                vix_value = float(vix_ltp)
+        except Exception:
+            pass  # Keep fallback value on fetch failure
         if nifty_df is not None and len(nifty_df) > 0 and stock_data:
             context = self.l1.compute(nifty_df, vix_value, stock_data)
         else:
