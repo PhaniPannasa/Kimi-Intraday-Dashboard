@@ -6,7 +6,7 @@ export interface ApiFetchResult<T> {
 }
 
 export async function apiFetch<T>(url: string, init?: RequestInit): Promise<ApiFetchResult<T>> {
-  const res = await fetch(url, init);
+  const res = init ? await fetch(url, init) : await fetch(url);
   if (!res.ok) {
     throw new Error(`apiFetch(${url}) → HTTP ${res.status}`);
   }

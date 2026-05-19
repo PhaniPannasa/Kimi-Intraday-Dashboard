@@ -1,5 +1,6 @@
 import { usePipelineStatus } from '@/hooks/usePipelineStatus';
 import { cn } from '@/lib/utils';
+import { MockBadge } from './MockBadge';
 
 const layerInfo = [
   { key: 'l1_market_context', label: 'L1', name: 'Market Context' },
@@ -19,12 +20,13 @@ interface PipelineStatusBarProps {
 }
 
 export function PipelineStatusBar({ activeLayer = -1 }: PipelineStatusBarProps) {
-  const { data, isLoading } = usePipelineStatus();
+  const { data, source, isLoading } = usePipelineStatus();
 
   if (isLoading || !data) {
     return (
       <div className="flex h-10 items-center gap-2 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3">
-        <div className="h-4 w-64 animate-pulse rounded bg-[var(--bg-surface-raised)]" />
+        <span className="text-[11px] text-[var(--text-tertiary)]">No cycles since startup</span>
+        <MockBadge source={source} />
       </div>
     );
   }
@@ -96,6 +98,7 @@ export function PipelineStatusBar({ activeLayer = -1 }: PipelineStatusBarProps) 
           <span className="font-mono text-[var(--text-secondary)]">{totalDuration}ms</span>
         </span>
         <span className="hidden sm:inline">· 100 symbols / minute</span>
+        <MockBadge source={source} />
       </div>
     </div>
   );
