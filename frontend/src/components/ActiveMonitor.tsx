@@ -1,6 +1,7 @@
 import { useMarketStore } from '@/stores/marketStore';
 import { cn } from '@/lib/utils';
 import { DataAgeBadge } from './DataAgeBadge';
+import { MockBadge } from './MockBadge';
 import { setupTypeLabels } from '@/types/api';
 
 export function ActiveMonitor() {
@@ -8,6 +9,7 @@ export function ActiveMonitor() {
   const invalidated = useMarketStore((s) => s.invalidatedTheses);
   const setSelectedThesis = useMarketStore((s) => s.setSelectedThesis);
   const ts = useMarketStore((s) => s.lastWSTimestamps['L8_THESIS']);
+  const source = useMarketStore((s) => s.sources['monitor/active-theses'] ?? s.sources['ws/l8_thesis']);
 
   return (
     <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] flex flex-col max-h-[500px]"
@@ -18,6 +20,7 @@ export function ActiveMonitor() {
         <h2 className="text-fluid-base font-bold"
         >Live Theses
         </h2>
+        <MockBadge source={source} />
         <DataAgeBadge timestamp={ts} />
         <span className="rounded bg-[var(--bg-surface-raised)] px-2 py-0.5 text-fluid-xs text-[var(--text-secondary)]"
         >

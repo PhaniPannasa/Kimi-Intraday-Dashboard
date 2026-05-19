@@ -1,13 +1,16 @@
 import { useMarketStore } from '@/stores/marketStore';
 import { cn } from '@/lib/utils';
+import { MockBadge } from './MockBadge';
 
 export function RegimeBanner() {
   const ctx = useMarketStore((s) => s.context);
+  const source = useMarketStore((s) => s.sources['ws/l1_context'] ?? s.sources['market/context']);
 
   if (!ctx) {
     return (
-      <div className="flex h-12 items-center border-b border-[var(--border-subtle)] bg-[var(--bg-surface)] px-4 animate-pulse">
-        <div className="h-4 w-64 rounded bg-[var(--bg-surface-raised)]" />
+      <div className="flex h-12 items-center gap-2 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)] px-4">
+        <span className="text-sm italic text-[var(--text-tertiary)]">Waiting for L1 context…</span>
+        <MockBadge source={source} />
       </div>
     );
   }
@@ -57,6 +60,7 @@ export function RegimeBanner() {
           <span className="text-[10px] uppercase tracking-wide text-[var(--text-tertiary)]">
             L1 Regime
           </span>
+          <MockBadge source={source} />
           <span
             className="text-lg font-bold tracking-tight"
             style={{ color: regimeColor }}

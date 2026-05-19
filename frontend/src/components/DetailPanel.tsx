@@ -3,6 +3,7 @@
 import { useMemo } from 'react';
 import { useMarketStore } from '@/stores/marketStore';
 import { useFactorBreakdown } from '@/hooks/useFactorBreakdown';
+import { MockBadge } from './MockBadge';
 import { setupTypeLabels } from '@/types/api';
 import type { ThesisCard, SymbolFactorBreakdown, ActionabilityTier, Regime } from '@/types/api';
 import type { SimStock, SimMarketContext } from '@/data/engineSimulator';
@@ -578,6 +579,7 @@ export function DetailPanel({ symbol, stock: stockProp, ctx }: DetailPanelProps)
   // Always initialise the hook (it becomes a no-op when symbol is null/undefined)
   const hookSymbol = stockProp ? null : (symbol ?? null);
   const { data: apiData, isLoading } = useFactorBreakdown(hookSymbol);
+  const source = useMarketStore((s) => s.sources['rankings/factors']);
 
   // ── Resolve data source ──
 
@@ -622,7 +624,7 @@ export function DetailPanel({ symbol, stock: stockProp, ctx }: DetailPanelProps)
         <div>
           <div className="text-sm text-[var(--text-secondary)]">Select a symbol</div>
           <div className="mt-1 text-xs text-[var(--text-tertiary)]">
-            Tap any row in Top 25 LONG or SHORT to see how layers L2–L10 contribute
+            Select a symbol — factor breakdown will appear when L3+L5 produce real signals
           </div>
         </div>
       </div>
@@ -676,6 +678,11 @@ export function DetailPanel({ symbol, stock: stockProp, ctx }: DetailPanelProps)
 
   return (
     <div className="flex flex-col overflow-hidden rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
+      {/* Source title bar */}
+      <div className="flex items-center gap-2 border-b border-[var(--border-subtle)] bg-[var(--bg-base)] px-3 py-1">
+        <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-tertiary)]">Detail</span>
+        <MockBadge source={source} />
+      </div>
       {/* Header */}
       {thesis && (
         <DetailHeader

@@ -1,6 +1,7 @@
 import { useMarketStore } from '@/stores/marketStore';
 import { cn } from '@/lib/utils';
 import { DataAgeBadge } from './DataAgeBadge';
+import { MockBadge } from './MockBadge';
 
 const tierDescriptions: Record<number, string> = {
   1: 'Tier 1 — Full Confluence',
@@ -14,6 +15,7 @@ const tierDescriptions: Record<number, string> = {
 export function EdgePanel() {
   const edgeTiers = useMarketStore((s) => s.edgeTiers);
   const ts = useMarketStore((s) => s.lastWSTimestamps['L10_EDGE']);
+  const source = useMarketStore((s) => s.sources['edge/tiers'] ?? s.sources['ws/l10_edge']);
   const tierIds = Object.keys(edgeTiers)
     .map(Number)
     .sort((a, b) => a - b);
@@ -23,6 +25,7 @@ export function EdgePanel() {
       {/* Header */}
       <div className="flex items-center justify-between border-b border-[var(--border-subtle)] px-3 py-2 md:px-4 md:py-3">
         <h2 className="text-fluid-base font-bold">Edge Tiers</h2>
+        <MockBadge source={source} />
         <DataAgeBadge timestamp={ts} />
         <span className="rounded bg-[var(--bg-surface-raised)] px-2 py-0.5 text-fluid-xs text-[var(--text-secondary)]">
           L10
@@ -33,7 +36,7 @@ export function EdgePanel() {
       <div className="flex-1 overflow-y-auto p-2 md:p-3 space-y-2">
         {tierIds.length === 0 ? (
           <div className="py-8 text-center text-fluid-sm text-[var(--text-secondary)]">
-            No tier promotions yet
+            No edge data — L10 needs at least 30 outcomes per tier
           </div>
         ) : (
           tierIds.map((id) => (

@@ -5,6 +5,7 @@ import { useRankings } from '@/hooks/useRankings';
 import { useMarketStore } from '@/stores/marketStore';
 import { cn } from '@/lib/utils';
 import { DataAgeBadge } from './DataAgeBadge';
+import { MockBadge } from './MockBadge';
 import type { RankingEntry } from '@/types/api';
 import { setupTypeLabels } from '@/types/api';
 import type { SimStock } from '@/data/engineSimulator';
@@ -213,6 +214,7 @@ interface RankingsPanelProps {
 export function RankingsPanel({ onSelectSymbol, flashedSymbols = new Map(), entries: simEntries }: RankingsPanelProps) {
   const [direction, setDirection] = useState<'LONG' | 'SHORT'>('LONG');
   const rankingTs = useMarketStore((s) => s.lastWSTimestamps['L6_RANKINGS']);
+  const source = useMarketStore((s) => s.sources['rankings/top25/' + direction.toLowerCase()]);
 
   // API hook (always called — does nothing when simEntries are provided because we pass the other direction below)
   const { data: longsData, isLoading: longsLoading } = useRankings('long');
@@ -276,6 +278,7 @@ export function RankingsPanel({ onSelectSymbol, flashedSymbols = new Map(), entr
         <h2 className="text-sm font-bold" style={{ color: accentColor }}>
           TOP 25 {direction}
         </h2>
+        <MockBadge source={source} />
         <span className="flex-1" />
 
         {/* Concentration metrics */}
@@ -341,7 +344,7 @@ export function RankingsPanel({ onSelectSymbol, flashedSymbols = new Map(), entr
           <div className="p-6 text-center text-sm text-[var(--text-secondary)]">Loading…</div>
         ) : entries.length === 0 ? (
           <div className="p-6 text-center text-sm text-[var(--text-secondary)]">
-            No {direction.toLowerCase()} candidates
+            No rankings yet — pipeline idle
           </div>
         ) : (
           <>
