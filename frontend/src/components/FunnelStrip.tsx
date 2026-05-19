@@ -11,7 +11,7 @@ const LAYER_ORDER = ['L1', 'L2', 'L3', 'L4', 'L5', 'L6', 'L7', 'L8', 'L9', 'L10'
 interface FunnelStripProps {
   layers: SimPipelineLayer[];
   activeLayer: number;
-  funnel: Record<string, { in: number; out: number }>;
+  funnel: Record<string, { in_count: number; out_count: number; layer: string }>;
   onInspect: (key: string) => void;
   inspectKey: string | null;
   learnMode: boolean;
@@ -26,8 +26,8 @@ export function FunnelStrip({
   learnMode,
 }: FunnelStripProps) {
   const source = useMarketStore((s) => s.sources['funnel/counts']);
-  const sourceCount = funnel?.L2?.in ?? 50;
-  const promotedCount = funnel?.L10?.out ?? 0;
+  const sourceCount = funnel?.L2?.in_count ?? 50;
+  const promotedCount = funnel?.L10?.out_count ?? 0;
   const isEmpty = !funnel || Object.keys(funnel).length === 0;
 
   if (isEmpty) {
@@ -68,8 +68,8 @@ export function FunnelStrip({
           const label = LAYER_ORDER[i] ?? layer.label;
           const meta = LAYER_META[label];
           const fd = funnel[label];
-          const inCount = fd?.in ?? 0;
-          const outCount = fd?.out ?? 0;
+          const inCount = fd?.in_count ?? 0;
+          const outCount = fd?.out_count ?? 0;
           const survPct = inCount > 0 ? (outCount / inCount) * 100 : 0;
           const dropPct = inCount > 0 ? ((inCount - outCount) / inCount) * 100 : 0;
           const isActive = i === activeLayer;

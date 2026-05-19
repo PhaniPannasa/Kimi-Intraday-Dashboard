@@ -1,10 +1,10 @@
 'use client';
 
-import { useRef, useState, useEffect, useMemo } from 'react';
+import { useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import { useMarketStore } from '@/stores/marketStore';
 import { MockBadge } from './MockBadge';
-import type { SimSnapshot, SimStock } from '@/data/engineSimulator';
+import type { ActivityEvent } from '@/types/api';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -54,193 +54,21 @@ const EVENT_CONFIG: Record<CycleEventType, EventConfig> = {
   STATE:   { icon: '→', color: 'var(--text-secondary)', label: 'STATE' },
 };
 
-const MAX_EVENTS = 60;
-
-// ---------------------------------------------------------------------------
-// Helper: build a Map<symbol, SimStock> from a snapshot
-// ---------------------------------------------------------------------------
-
-function buildStockMap(snapshot: SimSnapshot): Map<string, SimStock> {
-  const map = new Map<string, SimStock>();
-  for (const s of snapshot.universe.longs) map.set(s.symbol, s);
-  for (const s of snapshot.universe.shorts) map.set(s.symbol, s);
-  return map;
-}
-
-// ---------------------------------------------------------------------------
-// Hook: useCycleActivity
-// Tracks diffs between consecutive snapshots.  Returns events newest-first.
-// ---------------------------------------------------------------------------
-
-export function useCycleActivity(
-  snapshot: SimSnapshot,
-  cycle: number,
-): CycleEvent[] {
-  const [events, setEvents] = useState<CycleEvent[]>([]);
-  const processedRef = useRef(-1);
-  const prevRef = useRef<{
-    stocks: Map<string, SimStock>;
-    symbols: Set<string>;
-  } | null>(null);
-
-  useEffect(() => {
-    if (cycle <= processedRef.current) return;
-    processedRef.current = cycle;
-
-    const currentStocks = buildStockMap(snapshot);
-    const currentSymbols = new Set(currentStocks.keys());
-    const now = Date.now();
-    const newEvents: CycleEvent[] = [];
-
-    if (cycle === 0) {
-      // Seed: show "published as ATTRACTIVE" for the first batch
-      const seedStocks = [...snapshot.universe.longs, ...snapshot.universe.shorts]
-        .filter((s) => s.grade === 'ATTRACTIVE')
-        .slice(0, 8);
-      for (const s of seedStocks) {
-        newEvents.push({
-          id: `seed-${s.symbol}-${now}-${Math.random().toString(36).slice(2, 6)}`,
-          ts: now - 60000 + Math.random() * 30000,
-          type: 'NEW',
-          symbol: s.symbol,
-          dir: s.direction,
-          text: 'Published as ATTRACTIVE',
-          detail: `${s.setup_label} · Net R:R ${s.net_rr.toFixed(2)}`,
-          cycle: 0,
-        });
-      }
-    } else {
-      const prev = prevRef.current;
-      if (!prev) {
-        // First real cycle with no previous data: just store and return
-        prevRef.current = { stocks: currentStocks, symbols: currentSymbols };
-        return;
-      }
-
-      // ---- NEW: symbols appearing in the top-25 for the first time ----
-      for (const [sym, stock] of currentStocks) {
-        if (!prev.symbols.has(sym)) {
-          newEvents.push({
-            id: `new-${sym}-${cycle}-${now}`,
-            ts: now,
-            type: 'NEW',
-            symbol: sym,
-            dir: stock.direction,
-            text: 'New entrant in top 25',
-            detail: `Score ${stock.score.toFixed(1)} · ${stock.setup_label}`,
-            cycle,
-          });
-        }
-      }
-
-      // ---- DROP: symbols that fell out of the top-25 ----
-      for (const sym of prev.symbols) {
-        if (!currentSymbols.has(sym)) {
-          const prevStock = prev.stocks.get(sym);
-          newEvents.push({
-            id: `drop-${sym}-${cycle}-${now}`,
-            ts: now,
-            type: 'DROP',
-            symbol: sym,
-            dir: prevStock?.direction ?? 'LONG',
-            text: 'Dropped from top 25',
-            detail: prevStock ? `Was score ${prevStock.score.toFixed(1)}` : '',
-            cycle,
-          });
-        }
-      }
-
-      // ---- State transitions + score jumps (for symbols that persisted) ----
-      for (const [sym, stock] of currentStocks) {
-        const prevStock = prev.stocks.get(sym);
-        if (!prevStock) continue;
-
-        // --- State transitions ---
-        if (prevStock.state !== stock.state) {
-          if (prevStock.state === 'PENDING' && stock.state === 'TRIGGERED') {
-            newEvents.push({
-              id: `trig-${sym}-${cycle}-${now}`,
-              ts: now,
-              type: 'TRIGGER',
-              symbol: sym,
-              dir: stock.direction,
-              text: `Triggered at ${stock.trigger.toFixed(1)}`,
-              detail: `${stock.setup_label} · R:R ${stock.net_rr.toFixed(2)}`,
-              cycle,
-            });
-          } else if (stock.state === 'T1_HIT') {
-            newEvents.push({
-              id: `t1-${sym}-${cycle}-${now}`,
-              ts: now,
-              type: 'T1',
-              symbol: sym,
-              dir: stock.direction,
-              text: `T1 target hit at ${stock.t1.toFixed(1)}`,
-              detail: `MFE +${stock.mfe_R.toFixed(2)}R · MAE ${stock.mae_R.toFixed(2)}R`,
-              cycle,
-            });
-          } else if (stock.state === 'ACTIVE' && prevStock.state !== 'ACTIVE') {
-            newEvents.push({
-              id: `active-${sym}-${cycle}-${now}`,
-              ts: now,
-              type: 'ACTIVE',
-              symbol: sym,
-              dir: stock.direction,
-              text: `Now active · MFE +${stock.mfe_R.toFixed(2)}R`,
-              detail: `${stock.setup_label} @ ${stock.trigger.toFixed(1)}`,
-              cycle,
-            });
-          } else {
-            newEvents.push({
-              id: `state-${sym}-${cycle}-${now}`,
-              ts: now,
-              type: 'STATE',
-              symbol: sym,
-              dir: stock.direction,
-              text: `${prevStock.state} → ${stock.state}`,
-              detail: `${stock.setup_label} · Score ${stock.score.toFixed(1)}`,
-              cycle,
-            });
-          }
-        }
-
-        // --- Big score jumps (|Δ| >= 5) ---
-        const diff = stock.score - prevStock.score;
-        if (Math.abs(diff) >= 5) {
-          newEvents.push({
-            id: `jump-${sym}-${cycle}-${now}-${Math.random().toString(36).slice(2, 5)}`,
-            ts: now,
-            type: diff > 0 ? 'JUMP_UP' : 'JUMP_DN',
-            symbol: sym,
-            dir: stock.direction,
-            text: `Score ${diff > 0 ? 'jumped' : 'dropped'} ${diff >= 0 ? '+' : ''}${diff.toFixed(1)}`,
-            detail: `${prevStock.score.toFixed(1)} → ${stock.score.toFixed(1)}`,
-            cycle,
-          });
-        }
-      }
-    }
-
-    // Persist current state for the next cycle
-    prevRef.current = { stocks: currentStocks, symbols: currentSymbols };
-
-    // Accumulate (new events go to the front — newest first)
-    if (newEvents.length > 0) {
-      setEvents((prev) => [...newEvents.reverse(), ...prev].slice(0, MAX_EVENTS));
-    }
-  }, [snapshot, cycle]);
-
-  return events;
-}
-
-// ---------------------------------------------------------------------------
 // Component: CycleActivity
 // ---------------------------------------------------------------------------
 
 export interface CycleActivityProps {
-  events: CycleEvent[];
+  events: (CycleEvent | ActivityEvent)[];
   onSelect: (symbol: string) => void;
   selectedSymbol: string | null;
+}
+
+// Helpers to normalise CycleEvent | ActivityEvent to a common shape
+function eventTs(evt: CycleEvent | ActivityEvent): number {
+  return typeof evt.ts === 'string' ? Date.parse(evt.ts) : evt.ts;
+}
+function eventDir(evt: CycleEvent | ActivityEvent): 'LONG' | 'SHORT' {
+  return 'dir' in evt ? evt.dir : evt.direction;
 }
 
 export function CycleActivity({
@@ -316,6 +144,8 @@ export function CycleActivity({
             {events.map((evt) => {
               const cfg = EVENT_CONFIG[evt.type];
               const isSelected = selectedSymbol === evt.symbol;
+              const dir = eventDir(evt);
+              const ts = eventTs(evt);
               return (
                 <button
                   key={evt.id}
@@ -329,7 +159,7 @@ export function CycleActivity({
                 >
                   {/* Timestamp */}
                   <span className="mt-0.5 shrink-0 font-mono text-[10px] tabular-nums text-[var(--text-tertiary)]">
-                    {new Date(evt.ts).toLocaleTimeString('en-IN', {
+                    {new Date(ts).toLocaleTimeString('en-IN', {
                       hour: '2-digit',
                       minute: '2-digit',
                       second: '2-digit',
@@ -352,7 +182,7 @@ export function CycleActivity({
                   <span
                     className={cn(
                       'shrink-0 text-fluid-xs font-bold',
-                      evt.dir === 'LONG'
+                      dir === 'LONG'
                         ? 'text-[var(--trade-long)]'
                         : 'text-[var(--trade-short)]',
                     )}

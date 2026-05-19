@@ -205,8 +205,8 @@ function MobileRankCard({ entry, rank, selected, onSelect, flash }: MobileRankCa
 interface RankingsPanelProps {
   onSelectSymbol?: (symbol: string) => void;
   flashedSymbols?: Map<string, string>;
-  /** When provided, use these rich SimStock entries instead of the API hook. */
-  entries?: SimStock[];
+  /** When provided, use these entries instead of the API hook. */
+  entries?: (SimStock | RankingEntry)[];
 }
 
 // ─── Component ───
@@ -222,7 +222,7 @@ export function RankingsPanel({ onSelectSymbol, flashedSymbols = new Map(), entr
 
   // Pick source
   const apiEntries: RankingEntry[] = direction === 'LONG' ? (longsData ?? []) : (shortsData ?? []);
-  const simFiltered = useMemo<SimStock[] | null>(() => {
+  const simFiltered = useMemo<(SimStock | RankingEntry)[] | null>(() => {
     if (!simEntries) return null;
     return simEntries.filter((s) => s.direction === direction);
   }, [simEntries, direction]);
