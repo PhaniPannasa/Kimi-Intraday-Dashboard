@@ -6,6 +6,7 @@ import type { MarketContextFrame } from '@/types/api';
 
 export function useMarketContext() {
   const setSource = useMarketStore((s) => s.setSource);
+  const setContext = useMarketStore((s) => s.setContext);
 
   const query = useQuery({
     queryKey: ['marketContext'],
@@ -14,8 +15,11 @@ export function useMarketContext() {
   });
 
   useEffect(() => {
-    if (query.data) setSource('market/context', query.data.source);
-  }, [query.data, setSource]);
+    if (query.data) {
+      setSource('market/context', query.data.source);
+      setContext(query.data.data);
+    }
+  }, [query.data, setSource, setContext]);
 
   return {
     data: query.data?.data,
