@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,6 +8,11 @@ from api.websocket_manager import router as ws_router
 from core.scheduler.market_scheduler import scheduler
 from core.pipeline import pipeline
 from core.data.upstox_ws import upstox_ws
+
+
+async def _consume_ws():
+    """Keep WebSocket listener running — on_tick dispatched via thread."""
+    await upstox_ws.listen()
 
 
 @asynccontextmanager
@@ -21,6 +27,8 @@ async def lifespan(app: FastAPI):
         await upstox_ws.connect()
         all_keys = list(pipeline.symbol_map.values())
         await upstox_ws.subscribe(all_keys, mode="full")
+        # Start consuming WS messages in background
+        asyncio.create_task(_consume_ws())
         print(f"Upstox WS connected, subscribed to {len(all_keys)} symbols")
     except Exception as e:
         print(f"Upstox WS connection deferred: {e}")
@@ -30,9 +38,12 @@ async def lifespan(app: FastAPI):
         pipeline.run_cycle,
         trigger="interval",
         seconds=60,
+        next_run_time=None,  # fire immediately on first run
     )
     scheduler.start()
-    print(f"Scheduler started with {scheduler.get_job_count()} jobs")
+    # Force immediate first cycle
+    asyncio.create_task(pipeline.run_cycle())
+    print(f"Scheduler started with {scheduler.get_job_count()} jobs, first cycle triggered")
 
     yield
 

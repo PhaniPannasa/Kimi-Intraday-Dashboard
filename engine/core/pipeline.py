@@ -491,7 +491,8 @@ class BarAggregator:
         """Pre-load historical bars for *symbol*."""
         buf = self._buffers.get(symbol)
         if buf is not None:
-            buf.pre_load(symbol, bars_df)
+            inst_key = self.symbol_map.get(symbol, symbol)
+            buf.pre_load(inst_key, bars_df)
 
     def get_bars(self, symbol: str, n: int = 100) -> pl.DataFrame:
         """Return the last *n* completed bars for *symbol*."""
@@ -500,7 +501,8 @@ class BarAggregator:
             return pl.DataFrame(
                 {"open": [], "high": [], "low": [], "close": [], "volume": []},
             )
-        return buf.get_latest_bars(symbol, n=n)
+        inst_key = self.symbol_map.get(symbol, symbol)
+        return buf.get_latest_bars(inst_key, n=n)
 
 
 # ---------------------------------------------------------------------------
@@ -692,6 +694,29 @@ class PipelineOrchestrator:
             l2_flags = {}
         self._l2_flags_populated = len(l2_flags) > 0
 
+        # One-time backfill: fetch historical candles for symbols with < 20 bars
+        if not getattr(self, '_live_backfill_done', False):
+            self._live_backfill_done = True
+            backfill_count = 0
+            bf_errs = 0
+            first_err = None
+            for sym, inst_key in self.symbol_map.items():
+                try:
+                    existing = self.aggregator.get_bars(sym, n=200)
+                    if len(existing) < 20:
+                        resp = await self.upstox_rest.get_historical_candle(inst_key, "1minute")
+                        df = self._candle_json_to_df(resp)
+                        if len(df) > 0:
+                            self.aggregator.pre_load(sym, df)
+                            backfill_count += 1
+                except Exception as e:
+                    bf_errs += 1
+                    if first_err is None:
+                        first_err = str(e)[:120]
+            print(f"[Pipeline] Live backfill: loaded={backfill_count} errors={bf_errs}")
+            if first_err:
+                print(f"[Pipeline] First backfill error: {first_err}")
+
         # 1. Fetch Nifty context data
         nifty_df = None
         try:
@@ -737,13 +762,18 @@ class PipelineOrchestrator:
         # 2. Per-symbol: L3 -> signals -> L5 score
         scored: list[dict] = []
         stock_data: dict[str, pl.DataFrame] = {}
+        bars_ok = 0
+        bars_skip = 0
+        l3_err = 0
 
         for sym in self.symbol_map:
             try:
                 bars = self.aggregator.get_bars(sym, n=100)
                 if len(bars) < 20:
-                    continue  # Not enough bars for indicators
+                    bars_skip += 1
+                    continue
 
+                bars_ok += 1
                 # Convert to pandas for TA-lib / pandas_ta
                 pd_df = bars.to_pandas()
                 l3_df = self.l3.compute(pd_df)
@@ -777,17 +807,21 @@ class PipelineOrchestrator:
                 stock_data[sym] = self._add_vwap_column(bars)
 
             except Exception:
+                l3_err += 1
                 continue
 
+        print(f"[Pipeline] scored={len(scored)} bars_ok={bars_ok} bars_skip={bars_skip} l3_err={l3_err}")
+
         # 3. L1: market context
-        # Real VIX from Upstox LTPC
+        # Real VIX from Upstox historical candles (LTPC endpoint not available)
         vix_value = 15.0
         try:
-            vix_resp = await self.upstox_rest.get_ltpc(["NSE_INDEX|India VIX"])
-            vix_data = vix_resp.get("data", {})
-            vix_ltp = vix_data.get("NSE_INDEX|India VIX", {}).get("ltp")
-            if vix_ltp is not None:
-                vix_value = float(vix_ltp)
+            vix_candle_resp = await self.upstox_rest.get_historical_candle(
+                "NSE_INDEX|India VIX", "1minute",
+            )
+            vix_candles = vix_candle_resp.get("data", {}).get("candles", [])
+            if vix_candles:
+                vix_value = float(vix_candles[-1][4])  # close of last candle
         except Exception:
             pass  # Keep fallback value on fetch failure
 
@@ -1316,36 +1350,71 @@ class PipelineOrchestrator:
         )
         await self.cache.set("pipeline:status", status.model_dump(mode='json'), ex=120)
 
-    async def handle_upstox_tick(self, raw_message: str):
-        """Parse an Upstox V3 WebSocket tick and route to TickBuffer.ingest().
+    async def handle_upstox_tick(self, raw_message: bytes | str):
+        """Parse an Upstox V3 WebSocket tick (protobuf) and route to TickBuffer.
 
-        Expected message format (Full mode):
-          {"type": "full", "data": {"instrument_key": "...", "ltp": ...,
-           "volume": ..., "oi": ..., "timestamp": "..."}}
+        V3 feed sends protobuf-encoded FeedResponse containing a feeds map
+        keyed by instrument_key. Each feed has LTPC (ltp, cp), volume (vtt),
+        and OI (oi) fields for full mode.
         """
+        from core.data.MarketDataFeedV3_pb2 import FeedResponse
+
         try:
-            msg = json.loads(raw_message)
-        except (json.JSONDecodeError, TypeError):
+            if isinstance(raw_message, str):
+                raw_message = raw_message.encode("utf-8")
+            feed_resp = FeedResponse.FromString(raw_message)
+        except Exception:
             return
 
-        data = msg.get("data", msg)
-        if not isinstance(data, dict):
-            return
+        # FeedResponse.feeds is a map<string, Feed>
+        is_initial = feed_resp.type == 0  # initial_feed
+        for instrument_key, feed in feed_resp.feeds.items():
+            try:
+                ltp = None
+                volume = 0
+                oi = 0
+                ts = datetime.fromtimestamp(feed_resp.currentTs / 1000.0, tz=timezone.utc)
 
-        instrument_key = data.get("instrument_key")
-        ltp = data.get("ltp") or data.get("last_price")
-        if instrument_key is None or ltp is None:
-            return
+                if feed.HasField("fullFeed"):
+                    ff = feed.fullFeed
+                    if ff.HasField("marketFF"):
+                        mf = ff.marketFF
+                        ltp = mf.ltpc.ltp if mf.ltpc.ltp else None
+                        volume = int(mf.vtt)
+                        oi = int(mf.oi)
+                        # Pre-load OHLC bars from initial feed
+                        if is_initial and mf.marketOHLC.ohlc:
+                            ohlc_rows = []
+                            for ohlc in mf.marketOHLC.ohlc:
+                                if ohlc.ts:
+                                    ohlc_rows.append({
+                                        "open": ohlc.open,
+                                        "high": ohlc.high,
+                                        "low": ohlc.low,
+                                        "close": ohlc.close,
+                                        "volume": ohlc.vol,
+                                        "ts": datetime.fromtimestamp(ohlc.ts, tz=timezone.utc),
+                                    })
+                            if ohlc_rows:
+                                try:
+                                    self.aggregator.pre_load(
+                                        self.aggregator._inst_to_sym.get(instrument_key, instrument_key),
+                                        pl.DataFrame(ohlc_rows),
+                                    )
+                                except Exception:
+                                    pass
+                    elif ff.HasField("indexFF"):
+                        idx = ff.indexFF
+                        ltp = idx.ltpc.ltp if idx.ltpc.ltp else None
+                elif feed.HasField("ltpc"):
+                    ltp = feed.ltpc.ltp if feed.ltpc.ltp else None
 
-        volume = int(data.get("volume", 0) or 0)
-        oi = int(data.get("oi", 0) or 0)
-        ts_str = data.get("timestamp") or data.get("exchange_timestamp")
-        if ts_str:
-            ts = datetime.fromisoformat(str(ts_str).replace("Z", "+00:00"))
-        else:
-            ts = datetime.now(timezone.utc)
+                if ltp is None:
+                    continue
 
-        self.aggregator.ingest_tick(instrument_key, float(ltp), volume, oi, ts)
+                self.aggregator.ingest_tick(instrument_key, float(ltp), volume, oi, ts)
+            except Exception:
+                continue
 
 
 # Module-level singleton
