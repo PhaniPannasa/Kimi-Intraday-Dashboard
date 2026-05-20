@@ -156,6 +156,22 @@ The frontend WebSocket uses the relative path `/ws/v1/stream`
 (`frontend/src/hooks/useWebSocket.ts:5`); Vite's `/ws` proxy forwards it to
 `ws://localhost:8172`.
 
+**WebSocket limitation:** Cloudflare tunnels do not proxy WebSocket traffic by default.
+The frontend `useWebSocket` hook connects to `/ws/v1/stream`, which works locally
+(`ws://localhost:8172/ws/v1/stream` returns `101 Switching Protocols`) but fails
+through the public tunnel (`wss://kimi.intraday-edge-4zz.uk/ws/v1/stream`).
+
+When WS fails, the dashboard falls back to REST polling (60s for rankings, 300s for context,
+etc.). This is why MOCK badges persist — the REST endpoints return mock data when the
+pipeline has no real rankings, and without WS there is no push of real L1/L6/L8/L10 events.
+
+**To enable WS through the tunnel** (requires Cloudflare Zero Trust dashboard access):
+1. In Cloudflare dashboard → Networks → Tunnels → `intraday-edge`
+2. Add an additional public hostname: `kimi.intraday-edge-4zz.uk/ws/*`
+3. Set service type to `HTTP` → `localhost:8172`
+4. Under Additional application settings → HTTP → enable `No TLS Verify` if using self-signed certs
+5. Under Connectivity → enable WebSocket support
+
 ## Architecture
 
 NSE Intraday Trading Engine v1.2 — a **research-only** (Phase 1, no live order
