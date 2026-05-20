@@ -150,6 +150,178 @@ SYMBOL_TO_INSTRUMENT_KEY: dict[str, str] = {
     "ZYDUSLIFE": "NSE_EQ|INE010B01027",
 }
 
+# Per-symbol sector assignment for L4 sector-RS lookup.
+#
+# Maps each of the 105 symbols in SYMBOL_TO_INSTRUMENT_KEY to ONE of the 11
+# sector keys in SECTOR_INDEX_MAP (Auto / Bank / FMCG / IT / Media / Metal /
+# Pharma / PSU Bank / Realty / Energy / Telecom).
+#
+# Grouping rules for stocks without an exact NSE sector index match
+# (no "Power", "Insurance", "Cement", "Aviation", "ConsumerDurables", or
+# "Financials" index exists in SECTOR_INDEX_MAP):
+#
+#   * Power utilities      -> "Energy"   (NTPC, POWERGRID, TATAPOWER,
+#                                        ADANIPOWER, ADANIGREEN, ADANIENSOL)
+#   * Cement / Building    -> "Metal"    (ULTRACEMCO, AMBUJACEM, GRASIM)
+#   * Insurance / NBFC     -> "Bank"     (HDFCLIFE, ICICIPRULI, ICICIGI,
+#                                        SBILIFE, BAJAJFINSV, BAJAJHLDNG,
+#                                        BAJFINANCE, CHOLAFIN, SHRIRAMFIN,
+#                                        SBICARD, LICHSGFIN, IRFC, RECLTD,
+#                                        JIOFIN)
+#   * Aviation             -> "Energy"   (INDIGO; fuel-cost-sensitive proxy)
+#   * Consumer Durables /  -> "FMCG"     (ASIANPAINT, HAVELLS, POLYCAB,
+#     Paints                              TITAN, PIDILITIND)
+#   * Retail / Platforms   -> "FMCG"     (TRENT, NYKAA - consumer)
+#   * Internet / Platforms -> "IT"       (NAUKRI, ZOMATO, PAYTM)
+#   * Agri / Specialty     -> "FMCG" or "Metal" depending on closest fit
+#     chemicals
+#   * Capital goods /      -> "Auto" or "Metal" depending on closest fit
+#     industrials                       (BEL, HAL, SIEMENS, BHARATFORG)
+#
+# Default fallback for any symbol not present here is "Bank" (preserves the
+# pre-Fix-4 behaviour).
+SYMBOL_TO_SECTOR: dict[str, str] = {
+    # --- Energy / Oil & Gas / Power utilities ---
+    "RELIANCE": "Energy",       # Oil & gas major
+    "ONGC": "Energy",           # Oil exploration
+    "COALINDIA": "Energy",      # Coal / energy
+    "BPCL": "Energy",           # Oil refining
+    "HINDPETRO": "Energy",      # Oil refining
+    "IOC": "Energy",            # Oil refining
+    "GAIL": "Energy",           # Gas transmission
+    "OIL": "Energy",            # Oil India
+    "NTPC": "Energy",           # Power utility (proxy: Energy)
+    "POWERGRID": "Energy",      # Power transmission (proxy: Energy)
+    "TATAPOWER": "Energy",      # Power utility (proxy: Energy)
+    "ADANIPOWER": "Energy",     # Power utility (proxy: Energy)
+    "ADANIGREEN": "Energy",     # Renewable power (proxy: Energy)
+    "ADANIENSOL": "Energy",     # Power transmission (proxy: Energy)
+    "INDIGO": "Energy",         # Aviation (fuel-cost-sensitive proxy: Energy)
+
+    # --- Banks (private + general) ---
+    "HDFCBANK": "Bank",
+    "ICICIBANK": "Bank",
+    "KOTAKBANK": "Bank",
+    "AXISBANK": "Bank",
+    "INDUSINDBK": "Bank",
+
+    # --- PSU Banks ---
+    "SBIN": "PSU Bank",
+    "BANKBARODA": "PSU Bank",
+    "CANBK": "PSU Bank",
+    "PNB": "PSU Bank",
+
+    # --- NBFCs / Insurance / financial services (proxy: Bank) ---
+    "BAJFINANCE": "Bank",       # NBFC (proxy: Bank)
+    "BAJAJFINSV": "Bank",       # Financial services holding (proxy: Bank)
+    "BAJAJHLDNG": "Bank",       # Bajaj holdings (proxy: Bank)
+    "CHOLAFIN": "Bank",         # NBFC (proxy: Bank)
+    "SHRIRAMFIN": "Bank",       # NBFC (proxy: Bank)
+    "SBICARD": "Bank",          # Credit cards (proxy: Bank)
+    "LICHSGFIN": "Bank",        # Housing finance (proxy: Bank)
+    "IRFC": "Bank",             # Railway finance (proxy: Bank)
+    "RECLTD": "Bank",           # Power finance (proxy: Bank)
+    "JIOFIN": "Bank",           # Digital financial services (proxy: Bank)
+    "HDFCLIFE": "Bank",         # Life insurance (proxy: Bank)
+    "ICICIPRULI": "Bank",       # Life insurance (proxy: Bank)
+    "ICICIGI": "Bank",          # General insurance (proxy: Bank)
+    "SBILIFE": "Bank",          # Life insurance (proxy: Bank)
+
+    # --- IT / Tech / Internet platforms ---
+    "TCS": "IT",
+    "INFY": "IT",
+    "WIPRO": "IT",
+    "HCLTECH": "IT",
+    "TECHM": "IT",
+    "LTIM": "IT",
+    "MPHASIS": "IT",
+    "NAUKRI": "IT",             # Internet platform (proxy: IT)
+    "ZOMATO": "IT",             # Internet platform (proxy: IT)
+    "PAYTM": "IT",              # Digital payments / fintech platform (proxy: IT)
+
+    # --- Auto / Auto ancillaries ---
+    "MARUTI": "Auto",
+    "M&M": "Auto",
+    "TATAMOTORS": "Auto",
+    "BAJAJ-AUTO": "Auto",
+    "EICHERMOT": "Auto",
+    "HEROMOTOCO": "Auto",
+    "TVSMOTOR": "Auto",
+    "MOTHERSON": "Auto",        # Auto ancillary
+    "BHARATFORG": "Auto",       # Auto / industrial forgings (proxy: Auto)
+    "MRF": "Auto",              # Tyres (proxy: Auto)
+
+    # --- FMCG / Consumer staples / Consumer durables / Paints ---
+    "HINDUNILVR": "FMCG",
+    "ITC": "FMCG",
+    "NESTLEIND": "FMCG",
+    "BRITANNIA": "FMCG",
+    "DABUR": "FMCG",
+    "MARICO": "FMCG",
+    "COLPAL": "FMCG",
+    "GODREJCP": "FMCG",
+    "TATACONSUM": "FMCG",
+    "TITAN": "FMCG",            # Jewellery / lifestyle (proxy: FMCG)
+    "ASIANPAINT": "FMCG",       # Paints (proxy: FMCG - consumer)
+    "PIDILITIND": "FMCG",       # Adhesives / consumer chemicals (proxy: FMCG)
+    "HAVELLS": "FMCG",          # Consumer durables (proxy: FMCG)
+    "POLYCAB": "FMCG",          # Cables / consumer durables (proxy: FMCG)
+    "TRENT": "FMCG",            # Retail (proxy: FMCG)
+    "NYKAA": "FMCG",            # Beauty retail (proxy: FMCG)
+
+    # --- Pharma / Healthcare ---
+    "SUNPHARMA": "Pharma",
+    "DRREDDY": "Pharma",
+    "CIPLA": "Pharma",
+    "DIVISLAB": "Pharma",
+    "LUPIN": "Pharma",
+    "AUROPHARMA": "Pharma",
+    "TORNTPHARM": "Pharma",
+    "ZYDUSLIFE": "Pharma",
+    "APOLLOHOSP": "Pharma",     # Healthcare (proxy: Pharma)
+    "MAXHEALTH": "Pharma",      # Healthcare (proxy: Pharma)
+
+    # --- Metal / Mining / Cement (building materials) ---
+    "TATASTEEL": "Metal",
+    "JSWSTEEL": "Metal",
+    "JINDALSTEL": "Metal",
+    "HINDALCO": "Metal",
+    "HINDZINC": "Metal",
+    "VEDL": "Metal",
+    "ULTRACEMCO": "Metal",      # Cement (proxy: Metal - building material)
+    "AMBUJACEM": "Metal",       # Cement (proxy: Metal - building material)
+    "GRASIM": "Metal",          # Cement + chemicals (proxy: Metal)
+
+    # --- Telecom ---
+    "BHARTIARTL": "Telecom",
+
+    # --- Realty / Real estate ---
+    "DLF": "Realty",
+
+    # --- Industrials / Capital goods / Defence (proxy: Auto / Metal) ---
+    "LT": "Auto",               # Engineering / construction (proxy: Auto -
+                                # the closest "industrial" index available)
+    "BEL": "Auto",              # Defence electronics (proxy: Auto -
+                                # industrial / capital goods)
+    "HAL": "Auto",              # Defence aerospace (proxy: Auto - industrial)
+    "SIEMENS": "Auto",          # Industrial automation (proxy: Auto -
+                                # industrial / capital goods)
+
+    # --- Diversified / Specialty (best-fit by primary revenue source) ---
+    "ADANIPORTS": "Energy",     # Ports / logistics; Adani conglomerate
+                                # (proxy: Energy - infrastructure)
+    "ADANIENT": "Energy",       # Diversified Adani group flagship
+                                # (proxy: Energy - infrastructure)
+    "SRF": "Metal",             # Specialty chemicals / fluorochemicals
+                                # (proxy: Metal - industrial materials)
+    "NAVINFLUOR": "Metal",      # Specialty chemicals / fluorochemicals
+                                # (proxy: Metal - industrial materials)
+    "UPL": "FMCG",              # Agro chemicals (proxy: FMCG - consumer ag)
+    "PEL": "Pharma",            # Piramal Enterprises - pharma + financials
+                                # (proxy: Pharma - historic primary biz)
+}
+
+
 # ---------------------------------------------------------------------------
 # TickBuffer
 # ---------------------------------------------------------------------------
@@ -582,7 +754,8 @@ class PipelineOrchestrator:
                 signals["earnings"] = flags.get("earnings") == "Earnings"
                 regime = self._current_regime()
 
-                sector_data = real_sector_data.get("Bank", {"rank": 6, "tailwind": False})
+                sector_name = SYMBOL_TO_SECTOR.get(sym, "Bank")
+                sector_data = real_sector_data.get(sector_name, {"rank": 6, "tailwind": False})
                 oi_data = {"classification": "Neutral"}
 
                 result = self.l5.compute(signals, regime, sector_data, oi_data)
@@ -710,7 +883,10 @@ class PipelineOrchestrator:
             thesis = self._try_assemble_thesis(
                 sym, direction, bars, pd_df, l3_df, sigs,
                 l2_flags.get(sym, {}),
-                real_sector_data.get("Bank", {"rank": 6, "tailwind": False})
+                real_sector_data.get(
+                    SYMBOL_TO_SECTOR.get(sym, "Bank"),
+                    {"rank": 6, "tailwind": False},
+                ),
             )
             if thesis is None:
                 continue
