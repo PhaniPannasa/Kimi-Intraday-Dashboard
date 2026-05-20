@@ -2,18 +2,190 @@
 
 import { useMemo } from 'react';
 import { cn } from '@/lib/utils';
-import { evaluateLayers, LAYER_META } from '@/data/simTypes';
+import { LAYER_META, setupTypeLabels } from '@/types/api';
+import type { SymbolFactorBreakdown, MarketContextFrame } from '@/types/api';
 import { VerdictPill } from './SharedComponents';
-import type { SimStock, SimMarketContext } from '@/data/simTypes';
 
 interface LayerJourneyProps {
-  entry: SimStock | null;
-  ctx: SimMarketContext;
+  entry: SymbolFactorBreakdown | null;
+  ctx: MarketContextFrame;
   learnMode: boolean;
   activeLayer: number;
 }
 
 const LAYER_ORDER = ['L1', 'L2', 'L3', 'L4', 'L5', 'L6', 'L7', 'L8', 'L9', 'L10'] as const;
+
+// ─── evaluateLayers (moved from simTypes.ts) ───────────────────────
+
+function evaluateLayers(entry: SymbolFactorBreakdown, ctx: MarketContextFrame) {
+  const isLong = entry.direction === 'LONG';
+  const dirAligned =
+    (isLong && ctx.regime === 'Trending-Up') ||
+    (!isLong && ctx.regime === 'Trending-Down') ||
+    ctx.regime === 'Range-Bound';
+
+  return {
+    L1: {
+      verdict: dirAligned ? 'PASS' : 'WARN',
+      headline: `${ctx.regime} · VIX ${ctx.vix_value.toFixed(1)} ${ctx.vix_band}`,
+      reason: dirAligned
+        ? `Regime supports ${entry.direction.toLowerCase()} setups`
+        : `${entry.direction} bias fighting ${ctx.regime} regime`,
+      chips: [
+        {
+          label: ctx.regime,
+          kind:
+            ctx.regime === 'Trending-Up'
+              ? 'long'
+              : ctx.regime === 'Trending-Down'
+                ? 'short'
+                : 'neutral',
+        },
+      ],
+    },
+    L2: {
+      verdict: entry.l2_universe.fo_ban
+        ? 'FAIL'
+        : entry.l2_universe.lqs_score < 0.7 || entry.l2_universe.earnings_flag !== 'None'
+          ? 'WARN'
+          : 'PASS',
+      headline: `LQS ${(entry.l2_universe.lqs_score * 100).toFixed(0)} (${entry.l2_universe.liquidity_quality})`,
+      reason: entry.l2_universe.fo_ban
+        ? 'BANNED — F&O ban-list'
+        : 'Passed liquidity & eligibility gates',
+    },
+    L3: {
+      verdict: entry.l3_signals.ema_aligned ? 'PASS' : 'WARN',
+      headline: `EMA ${entry.l3_signals.ema_aligned ? 'aligned' : 'mixed'} · RSI ${entry.l3_signals.rsi.toFixed(0)} · ADX ${entry.l3_signals.adx.toFixed(0)}`,
+      reason: entry.l3_signals.ema_aligned
+        ? `Full ${isLong ? 'bullish' : 'bearish'} signal stack`
+        : 'Signals mixed',
+      factors: [
+        { label: 'Trend', v: entry.l5_scores.f1_trend },
+        { label: 'Momentum', v: entry.l5_scores.f2_momentum },
+        { label: 'Volume', v: entry.l5_scores.f3_volume },
+        { label: 'Vol-Pos', v: entry.l5_scores.f4_volpos },
+        { label: 'Structure', v: entry.l5_scores.f5_structure },
+        { label: 'Sector', v: entry.l5_scores.f6_sector },
+        { label: 'Risk', v: entry.l5_scores.f7_risk },
+      ],
+    },
+    L4: {
+      verdict:
+        entry.l4_sector.rs_ratio > 1.02 && entry.l4_sector.rs_momentum > 1
+          ? 'PASS'
+          : entry.l4_sector.rs_ratio < 0.98
+            ? 'FAIL'
+            : 'WARN',
+      headline: `${entry.l4_sector.sector_name} #${entry.l4_sector.rotation_rank} · RS-Ratio ${entry.l4_sector.rs_ratio.toFixed(3)}`,
+      reason:
+        entry.l4_sector.rs_ratio > 1.02
+          ? `${entry.l4_sector.sector_name} outperforming`
+          : `${entry.l4_sector.sector_name} in line`,
+    },
+    L5: {
+      verdict: entry.l5_scores.total >= 75 ? 'PASS' : entry.l5_scores.total >= 60 ? 'WARN' : 'FAIL',
+      headline: `Composite ${entry.l5_scores.total.toFixed(1)}`,
+      reason: entry.l5_scores.total >= 75 ? 'Multi-factor confirmation' : 'Mid-tier score',
+    },
+    L6: {
+      verdict:
+        entry.l6_ranking.rank_movement === 'UP' || entry.l6_ranking.rank_movement === 'NEW'
+          ? 'PASS'
+          : entry.l6_ranking.rank_movement === 'DOWN'
+            ? 'WARN'
+            : 'PASS',
+      headline: `Δ ${entry.l6_ranking.score_change >= 0 ? '+' : ''}${entry.l6_ranking.score_change.toFixed(2)} · ${entry.l6_ranking.rank_movement}`,
+      reason:
+        entry.l6_ranking.rank_movement === 'NEW'
+          ? 'New entrant this cycle'
+          : entry.l6_ranking.rank_movement === 'UP'
+            ? 'Rising in rank'
+            : 'Steady',
+    },
+    L7: {
+      verdict:
+        entry.l7_confluence.score >= 5
+          ? 'PASS'
+          : entry.l7_confluence.score >= 3
+            ? 'WARN'
+            : 'FAIL',
+      headline: `${entry.l7_confluence.score}/6 confluence checks passed`,
+      reason: entry.l7_confluence.score >= 5 ? 'High-quality confluence' : 'Partial confluence',
+      checkRows: Object.entries(entry.l7_confluence.checks).map(
+        ([label, ok]: [string, boolean]) => ({
+          label: label
+            .replace(/_/g, ' ')
+            .replace(/\b\w/g, (c: string) => c.toUpperCase()),
+          ok,
+        }),
+      ),
+    },
+    L8: {
+      verdict:
+        entry.l8_thesis.grade === 'ATTRACTIVE'
+          ? 'PASS'
+          : entry.l8_thesis.grade === 'MARGINAL'
+            ? 'WARN'
+            : 'FAIL',
+      headline: `${setupTypeLabels[entry.l8_thesis.setup_type] ?? entry.l8_thesis.setup_type} · Net R:R ${entry.l8_thesis.net_rr.toFixed(2)}`,
+      reason:
+        entry.l8_thesis.grade === 'ATTRACTIVE'
+          ? 'Thesis published as Tradeable'
+          : 'R:R below threshold',
+      levels: {
+        trigger: entry.l8_thesis.trigger,
+        invalidation: entry.l8_thesis.invalidation,
+        t1: entry.l8_thesis.t1,
+        t2: entry.l8_thesis.t2,
+        gross_rr: entry.l8_thesis.gross_rr,
+        net_rr: entry.l8_thesis.net_rr,
+        decay: 1.0,
+        tier: entry.l8_thesis.actionability_tier,
+        grade: entry.l8_thesis.grade,
+        setup: setupTypeLabels[entry.l8_thesis.setup_type] ?? entry.l8_thesis.setup_type.toString(),
+      },
+    },
+    L9: {
+      verdict:
+        !entry.l9_monitor || entry.l9_monitor.state === 'PENDING'
+          ? 'NA'
+          : entry.l9_monitor.state === 'ACTIVE' ||
+              entry.l9_monitor.state === 'T1_HIT' ||
+              entry.l9_monitor.state === 'TRIGGERED'
+            ? 'LIVE'
+            : 'WARN',
+      headline: `State ${entry.l9_monitor?.state ?? 'PENDING'} · MFE +${(entry.l9_monitor?.mfe_R ?? 0).toFixed(2)}R`,
+      reason:
+        entry.l9_monitor?.state === 'PENDING' || !entry.l9_monitor
+          ? `Waiting for trigger`
+          : 'Live in shadow ledger',
+      state: entry.l9_monitor?.state ?? 'PENDING',
+    },
+    L10: {
+      verdict:
+        (entry.l10_edge?.edge_tier ?? 6) <= 2
+          ? 'PASS'
+          : (entry.l10_edge?.edge_tier ?? 6) <= 4
+            ? 'WARN'
+            : 'NA',
+      headline: `T${entry.l10_edge?.edge_tier ?? 6} · hit rate ${((0.42 + (7 - (entry.l10_edge?.edge_tier ?? 6)) * 0.05) * 100).toFixed(0)}%`,
+      reason:
+        (entry.l10_edge?.edge_tier ?? 6) <= 2
+          ? 'Promoted tier — historical edge confirmed'
+          : 'Mid tier — smaller size',
+      edge: {
+        tier: entry.l10_edge?.edge_tier ?? 6,
+        hit: 0.42 + (7 - (entry.l10_edge?.edge_tier ?? 6)) * 0.05,
+        ci_lo: 0.32 + (7 - (entry.l10_edge?.edge_tier ?? 6)) * 0.04,
+        ci_hi: 0.55 + (7 - (entry.l10_edge?.edge_tier ?? 6)) * 0.05,
+        n: 20 + (7 - (entry.l10_edge?.edge_tier ?? 6)) * 18,
+        setup: setupTypeLabels[entry.l8_thesis.setup_type] ?? entry.l8_thesis.setup_type.toString(),
+        regime: ctx.regime,
+      },
+    },
+  };
+}
 
 /* ─── Pip row — 10 colored dots ─────────────────────── */
 function StatusPips({ layers }: { layers: ReturnType<typeof evaluateLayers> }) {
@@ -414,26 +586,26 @@ export function LayerJourney({ entry, ctx, learnMode, activeLayer }: LayerJourne
           </span>
           <StatusPips layers={layers} />
           <span className="ml-auto text-[10px] text-[var(--text-tertiary)]">
-            {entry.sector_name} · Price {entry.price.toFixed(1)}
+            {entry.l4_sector.sector_name} · Price {(entry.price ?? 0).toFixed(1)}
           </span>
         </div>
         <div className="text-[11px] text-[var(--text-secondary)]">
-          {isLong ? 'Bullish' : 'Bearish'} thesis via {entry.setup_label} ·{' '}
-          {entry.confluence_score}/6 confluence · Composite{' '}
-          <span className="font-mono font-bold">{entry.score.toFixed(1)}</span> · Net R:R{' '}
-          <span className="font-mono font-bold">{entry.net_rr.toFixed(2)}</span> ·{' '}
+          {isLong ? 'Bullish' : 'Bearish'} thesis via {setupTypeLabels[entry.l8_thesis.setup_type] ?? entry.l8_thesis.setup_type} ·{' '}
+          {entry.l7_confluence.score}/6 confluence · Composite{' '}
+          <span className="font-mono font-bold">{entry.l5_scores.total.toFixed(1)}</span> · Net R:R{' '}
+          <span className="font-mono font-bold">{entry.l8_thesis.net_rr.toFixed(2)}</span> ·{' '}
           <span
             className="font-semibold"
             style={{
               color:
-                entry.grade === 'ATTRACTIVE'
+                entry.l8_thesis.grade === 'ATTRACTIVE'
                   ? 'var(--trade-long)'
-                  : entry.grade === 'MARGINAL'
+                  : entry.l8_thesis.grade === 'MARGINAL'
                     ? 'var(--trade-neutral)'
                     : 'var(--text-tertiary)',
             }}
           >
-            {entry.grade}
+            {entry.l8_thesis.grade}
           </span>
         </div>
       </div>

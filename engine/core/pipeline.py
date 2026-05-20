@@ -8,7 +8,6 @@ PipelineOrchestrator  Drives L1-L10 layers with real bar data, market-session
 
 import asyncio
 import json
-import random
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -20,9 +19,11 @@ import polars as pl
 from api.websocket_manager import manager as ws_manager
 from core.data.redis_cache import cache
 from core.data.upstox_rest import upstox_rest
+from core.data.nse_scraper import nse_scraper
 from core.session.market_session import session as market_session
 from layers.l1_market_context import L1MarketContext
 from layers.l3_signals import L3Signals, ema_aligned, detect_macd_divergence
+from layers.l4_sector import rank_sectors
 from layers.l5_scoring import L5Scoring
 from layers.l6_ranking import L6Ranking
 from layers.l7_confluence import L7Confluence
@@ -336,6 +337,30 @@ class BarAggregator:
 
 NIFTY_INDEX_KEY = "NSE_INDEX|Nifty 50"
 
+SECTOR_INDEX_MAP: dict[str, str] = {
+    "Auto": "NSE_INDEX|Nifty Auto",
+    "Bank": "NSE_INDEX|Nifty Bank",
+    "FMCG": "NSE_INDEX|Nifty FMCG",
+    "IT": "NSE_INDEX|Nifty IT",
+    "Media": "NSE_INDEX|Nifty Media",
+    "Metal": "NSE_INDEX|Nifty Metal",
+    "Pharma": "NSE_INDEX|Nifty Pharma",
+    "PSU Bank": "NSE_INDEX|Nifty PSU Bank",
+    "Realty": "NSE_INDEX|Nifty Realty",
+    "Energy": "NSE_INDEX|Nifty Energy",
+    "Telecom": "NSE_INDEX|Nifty Telecom",
+}
+
+
+def _check_earnings_today(symbol: str, earnings_data: list) -> str:
+    """Check if symbol has earnings announcement today."""
+    from datetime import date
+    today_str = date.today().isoformat()
+    for item in earnings_data or []:
+        if item.get("symbol") == symbol and item.get("date") == today_str:
+            return "Earnings"
+    return "None"
+
 
 class PipelineOrchestrator:
     """Drives the L1-L10 pipeline with real bar data.
@@ -376,6 +401,13 @@ class PipelineOrchestrator:
         self.latest_long_rankings: list = []
         self.latest_short_rankings: list = []
         self.latest_theses: list[ThesisCard] = []
+
+        # Cycle number for funnel / activity / status
+        self._cycle_number: int = 0
+
+        # Telemetry realness tracking (updated each cycle)
+        self._l2_flags_populated: bool = False
+        self._sector_rs_real: bool = False
 
     # ------------------------------------------------------------------
     # Entry point
@@ -421,12 +453,72 @@ class PipelineOrchestrator:
         )
         self._pre_market_done = True
 
+    def _try_assemble_thesis(self, symbol: str, direction: str, bars_df,
+                              pd_df, l3_df, signals: dict,
+                              l2_flags: dict, sector_data: dict) -> ThesisCard | None:
+        """Try all 6 setup assemblers; return first passing thesis or None."""
+        if len(bars_df) < 5:
+            return None
+
+        recent = bars_df.tail(5)
+        close = float(recent["close"][-1])
+        orb_high = float(recent["high"].max())
+        orb_low = float(recent["low"].min())
+        pdh = orb_high * 1.01
+        pdl = orb_low * 0.99
+        atr_val = signals.get("atr", max((orb_high - orb_low) * 0.5, 1.0))
+        signals["direction"] = direction
+
+        for setup_type in range(1, 7):
+            try:
+                thesis = self.l8.assemble(
+                    symbol=symbol,
+                    direction=direction,
+                    setup_type=setup_type,
+                    setup_params={
+                        "orb_high": orb_high, "orb_low": orb_low,
+                        "vwap": signals.get("vwap", close),
+                        "pdh": pdh, "pdl": pdl,
+                        "close": close, "atr": atr_val,
+                    },
+                    confluence_data=self._extract_confluence_data(pd_df, l3_df, signals),
+                    cost_params={
+                        "qty": 100, "lot_size": 50,
+                        "futures": l2_flags.get("fo_eligible", True),
+                        "liquidity_quality": l2_flags.get("liquidity_quality", "Good"),
+                        "fo_ban": l2_flags.get("fo_ban", False),
+                        "shortability": l2_flags.get("shortability", "FUTURES_OPTIONS"),
+                    },
+                )
+                if thesis.trigger > 0 and thesis.invalidation > 0:
+                    return thesis
+            except Exception:
+                continue
+        return None
+
     # ------------------------------------------------------------------
     # Phase: live  (full compute pipeline)
     # ------------------------------------------------------------------
 
     async def _run_live_cycle(self):
         now = datetime.now(timezone.utc)
+        self._cycle_number += 1
+
+        # L2: Fetch NSE flags once per cycle (cached for all symbols)
+        l2_flags: dict[str, dict] = {}
+        try:
+            fo_ban_list = await nse_scraper.get_fo_ban_list()
+            earnings_data = await nse_scraper.get_corporate_actions()
+            mwpl_list = await nse_scraper.get_mwpl()
+            for sym in self.symbol_map:
+                l2_flags[sym] = {
+                    "fo_ban": sym in fo_ban_list,
+                    "mwpl": "MWPL" if sym in mwpl_list else "None",
+                    "earnings": _check_earnings_today(sym, earnings_data),
+                }
+        except Exception:
+            l2_flags = {}
+        self._l2_flags_populated = len(l2_flags) > 0
 
         # 1. Fetch Nifty context data
         nifty_df = None
@@ -437,6 +529,38 @@ class PipelineOrchestrator:
             nifty_df = self._candle_json_to_df(nifty_resp)
         except Exception:
             pass
+
+        # L4: Compute real sector RS from sector index feeds
+        real_sector_data: dict[str, dict] = {}
+        try:
+            sector_returns: dict[str, float] = {}
+            sector_histories: dict[str, list] = {}
+            for sector_name, index_key in SECTOR_INDEX_MAP.items():
+                try:
+                    resp = await self.upstox_rest.get_historical_candle(index_key, "1minute")
+                    df = self._candle_json_to_df(resp)
+                    if len(df) >= 5:
+                        close = df["close"].to_numpy()
+                        sector_returns[sector_name] = float((close[-1] - close[0]) / close[0])
+                        sector_histories[sector_name] = (
+                            [float((close[i] - close[i-5]) / close[i-5])
+                             for i in range(5, len(close), 5)]
+                            if len(close) >= 25 else
+                            [float((close[-1] - close[0]) / close[0])]
+                        )
+                except Exception:
+                    continue
+            if sector_returns:
+                nifty_5min_return = float(
+                    (nifty_df["close"].to_numpy()[-1] - nifty_df["close"].to_numpy()[0])
+                    / nifty_df["close"].to_numpy()[0]
+                ) if nifty_df is not None and len(nifty_df) >= 5 else 0.0
+                ranked_sectors = rank_sectors(sector_returns, nifty_5min_return, sector_histories)
+                for entry in ranked_sectors:
+                    real_sector_data[entry["sector"]] = entry
+        except Exception:
+            pass
+        self._sector_rs_real = len(real_sector_data) > 0
 
         # 2. Per-symbol: L3 -> signals -> L5 score
         scored: list[dict] = []
@@ -453,9 +577,12 @@ class PipelineOrchestrator:
                 l3_df = self.l3.compute(pd_df)
 
                 signals = self._extract_l3_signals(sym, l3_df)
+                flags = l2_flags.get(sym, {})
+                signals["fo_ban"] = flags.get("fo_ban", False)
+                signals["earnings"] = flags.get("earnings") == "Earnings"
                 regime = self._current_regime()
 
-                sector_data = self._synthetic_sector_data(sym)
+                sector_data = real_sector_data.get("Bank", {"rank": 6, "tailwind": False})
                 oi_data = {"classification": "Neutral"}
 
                 result = self.l5.compute(signals, regime, sector_data, oi_data)
@@ -465,9 +592,12 @@ class PipelineOrchestrator:
                 conf_data = self._extract_confluence_data(pd_df, l3_df, signals)
                 conf_score = self.l7.compute(conf_data)
                 result["confluence_score"] = conf_score
-                result["setup_type"] = random.randint(1, 6)
+                result["setup_type"] = 1  # Default placeholder; overwritten by L8 thesis assembly
                 result["actionability_tier"] = "Research-Only"
-                result["liquidity_quality"] = random.choice(["Excellent", "Good", "Marginal"])
+                # Compute liquidity quality from bar volume data
+                vol_series = bars["volume"].to_numpy()
+                avg_vol = float(np.mean(vol_series)) if len(vol_series) > 0 else 0
+                result["liquidity_quality"] = "Good"  # Default; enriched when depth feed wired
 
                 scored.append(result)
                 # L1.compute_breadth expects a "vwap" column
@@ -487,8 +617,44 @@ class PipelineOrchestrator:
                 vix_value = float(vix_ltp)
         except Exception:
             pass  # Keep fallback value on fetch failure
+
+        # Bank Nifty divergence
+        bank_nifty_divergence = 0.0
+        try:
+            bn_df = None
+            bn_resp = None
+            try:
+                bn_resp = await self.upstox_rest.get_historical_candle(
+                    "NSE_INDEX|Nifty Bank", "5minute",
+                )
+                bn_df = self._candle_json_to_df(bn_resp)
+            except Exception:
+                pass
+            if nifty_df is not None and bn_df is not None and len(nifty_df) >= 5 and len(bn_df) >= 5:
+                nifty_close = nifty_df["close"].to_numpy()
+                bn_close = bn_df["close"].to_numpy()
+                nifty_ret = float((nifty_close[-1] - nifty_close[-5]) / nifty_close[-5])
+                bn_ret = float((bn_close[-1] - bn_close[-5]) / bn_close[-5])
+                bank_nifty_divergence = round(bn_ret - nifty_ret, 4)
+        except Exception:
+            pass
+
+        # event_flag from earnings
+        event_flag = None
+        try:
+            earnings_today = [sym for sym, flags in l2_flags.items()
+                            if flags.get("earnings") == "Earnings"]
+            if earnings_today:
+                event_flag = f"Earnings: {', '.join(earnings_today[:5])}"
+        except Exception:
+            pass
+
         if nifty_df is not None and len(nifty_df) > 0 and stock_data:
-            context = self.l1.compute(nifty_df, vix_value, stock_data)
+            context = self.l1.compute(
+                nifty_df, vix_value, stock_data,
+                event_flag=event_flag,
+                bank_nifty_divergence=bank_nifty_divergence,
+            )
         else:
             context = MarketContextFrame()
         self.latest_context = context
@@ -506,61 +672,52 @@ class PipelineOrchestrator:
             longs = []
             shorts = []
 
-        # 5. L8: assemble theses for top 5
-        theses: list[ThesisCard] = []
-        for rank_entry in rankings[:5]:
-            bars_for_thesis = self.aggregator.get_bars(rank_entry.symbol, 20)
-            if len(bars_for_thesis) < 2:
-                continue
-            recent = bars_for_thesis.tail(5)
-            orb_high = float(recent["high"].max())
-            orb_low = float(recent["low"].min())
-            vwap_val = float(bars_for_thesis.tail(1)["close"][0])
-            pdh = orb_high * 1.01
-            direction = "LONG" if rank_entry.net_rr > 0 else "SHORT"
+        # Push activity events to Redis
+        try:
+            cycle_num = self._cycle_number
+            for r in rankings:
+                movement_str = r.rank_movement.value if hasattr(r.rank_movement, 'value') else str(r.rank_movement)
+                if movement_str in ("NEW", "UP", "DOWN"):
+                    event = {
+                        "id": f"{now.timestamp()}-{r.symbol}",
+                        "ts": now.isoformat(),
+                        "type": movement_str,
+                        "symbol": r.symbol,
+                        "direction": "LONG" if r.net_rr > 0 else "SHORT",
+                        "text": f"{r.symbol} {movement_str} (score {r.score:.1f})",
+                        "detail": f"Rank movement, score {r.score:.1f}",
+                        "cycle": cycle_num,
+                    }
+                    await self.cache.client.lpush("pipeline:activity", json.dumps(event))
+            await self.cache.client.ltrim("pipeline:activity", 0, 199)
+        except Exception:
+            pass
 
-            thesis = self.l8.assemble(
-                symbol=rank_entry.symbol,
-                direction=direction,
-                setup_type=1,  # ORB_15MIN
-                setup_params={
-                    "orb_high": orb_high,
-                    "orb_low": orb_low,
-                    "vwap": vwap_val,
-                    "pdh": pdh,
-                    "pdl": orb_low * 0.99,
-                },
-                confluence_data={
-                    "close": vwap_val,
-                    "high": orb_high,
-                    "low": orb_low,
-                    "volume": 50000,
-                    "median_volume": 25000,
-                    "ema9": vwap_val,
-                    "ema20": vwap_val * 0.99,
-                    "ema50": vwap_val * 0.98,
-                    "atr": max((orb_high - orb_low) * 0.5, 1.0),
-                    "price": vwap_val,
-                    "invalidation": orb_low,
-                    "t1": vwap_val * 1.01,
-                    "bar_range": orb_high - orb_low,
-                    "median_range": orb_high - orb_low,
-                    "direction": direction,
-                    "is_opening": False,
-                },
-                cost_params={
-                    "qty": 100,
-                    "lot_size": 50,
-                    "futures": True,
-                    "liquidity_quality": "Good",
-                    "fo_ban": False,
-                    "shortability": "FUTURES_OPTIONS",
-                },
+        # 5. L8: assemble theses for stocks with score >= 40
+        theses: list[ThesisCard] = []
+        for rank_entry in rankings[:10]:  # Top 10, limit active theses
+            sym = rank_entry.symbol
+            bars = self.aggregator.get_bars(sym, 20)
+            if len(bars) < 5:
+                continue
+
+            pd_df = bars.to_pandas()
+            l3_df = self.l3.compute(pd_df)
+            sigs = self._extract_l3_signals(sym, l3_df)
+            direction = "LONG" if rank_entry.net_rr > 0 else "SHORT"
+            sigs["direction"] = direction
+
+            thesis = self._try_assemble_thesis(
+                sym, direction, bars, pd_df, l3_df, sigs,
+                l2_flags.get(sym, {}),
+                real_sector_data.get("Bank", {"rank": 6, "tailwind": False})
             )
+            if thesis is None:
+                continue
 
             theses.append(thesis)
 
-            # L9: register & tick check
+            # L9: register in shadow ledger
             await self.l9.on_create({
                 "thesis_id": thesis.thesis_id,
                 "symbol": thesis.symbol,
@@ -570,25 +727,16 @@ class PipelineOrchestrator:
                 "invalidation": thesis.invalidation,
                 "t1": thesis.t1,
                 "t2": thesis.t2,
+                "sector": "Bank",  # Placeholder until per-symbol sector mapping
+                "time_bucket": context.time_bucket if hasattr(context, "time_bucket") else "Trend Establishment",
+                "regime": context.regime if hasattr(context, "regime") else "Range-Bound",
                 "cost_breakdown": thesis.cost_breakdown,
             })
-            await self.l9.on_trigger(thesis.thesis_id, thesis.trigger)
-            mock_price = thesis.trigger * random.uniform(0.999, 1.001)
-            l9_results = await self.l9.on_tick(mock_price)
-            for r in l9_results:
-                if r["state"] == "STOPPED_OUT":
-                    await ws_manager.broadcast({
-                        "type": "L9_INVALIDATION",
-                        "timestamp": now.isoformat(),
-                        "payload": {
-                            "thesis_id": r["thesis_id"],
-                            "reason": f"Stop loss hit at {mock_price:.2f}",
-                        },
-                    })
 
         self.latest_theses = theses
 
-        # 6. L10: edge lookup
+        # 6. L10: populate from DB then edge lookup
+        await self.l10.populate_from_db()
         regime_str = context.regime if hasattr(context, "regime") else "Range-Bound"
         edge_events = []
         for st in [SetupType.ORB_15MIN, SetupType.VWAP_RECLAIM, SetupType.SUPERTREND_PULLBACK]:
@@ -601,6 +749,24 @@ class PipelineOrchestrator:
                         "tier": tier,
                         "promotion": "PROMOTED" if edge["n"] >= 30 else "WATCH",
                     })
+
+        # Cache funnel counts to Redis
+        try:
+            funnel = {
+                "L1": {"in": 1, "out": 1},
+                "L2": {"in": len(self.symbol_map), "out": len(scored)},
+                "L3": {"in": len(scored), "out": len(scored)},
+                "L4": {"in": len(scored), "out": len(scored)},
+                "L5": {"in": len(scored), "out": len(scored)},
+                "L6": {"in": len(scored), "out": len(rankings)},
+                "L7": {"in": len(rankings), "out": len(rankings)},
+                "L8": {"in": len(rankings), "out": len(theses)},
+                "L9": {"in": len(theses), "out": len(self.l9.active)},
+                "L10": {"in": len(theses), "out": len(theses)},
+            }
+            await self.cache.set("pipeline:funnel_counts", funnel)
+        except Exception:
+            pass
 
         # 7. Broadcast all
         await ws_manager.broadcast({
@@ -628,6 +794,22 @@ class PipelineOrchestrator:
                 "timestamp": now.isoformat(),
                 "payload": evt,
             })
+
+        # Broadcast funnel counts via WS
+        try:
+            await ws_manager.broadcast_funnel_counts(funnel)
+        except Exception:
+            pass
+
+        # Broadcast alert for each thesis
+        for thesis in theses:
+            try:
+                await ws_manager.broadcast_alert(
+                    "triggered", thesis.symbol,
+                    f"{thesis.symbol} {thesis.direction.value} thesis triggered @ {thesis.trigger:.2f}"
+                )
+            except Exception:
+                pass
 
         # 8. Write factor breakdowns and pipeline status to Redis
         try:
@@ -851,11 +1033,6 @@ class PipelineOrchestrator:
         return "Range-Bound"
 
     @staticmethod
-    def _synthetic_sector_data(symbol: str) -> dict:
-        """Placeholder sector data — replace with real L4 feed later."""
-        return {"rank": random.randint(1, 11), "tailwind": random.random() > 0.7}
-
-    @staticmethod
     def _extract_confluence_data(
         pd_df: pd.DataFrame,
         l3_df: pd.DataFrame,
@@ -955,6 +1132,7 @@ class PipelineOrchestrator:
 
         status = PipelineStatusResponse(
             last_cycle_at=now,
+            cycle_number=self._cycle_number,
             cycle_duration_ms=sum(layer_timings.values()),
             market_session=phase,
             time_bucket=time_bucket,

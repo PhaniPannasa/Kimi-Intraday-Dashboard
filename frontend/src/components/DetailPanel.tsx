@@ -5,110 +5,27 @@ import { useMarketStore } from '@/stores/marketStore';
 import { useFactorBreakdown } from '@/hooks/useFactorBreakdown';
 import { MockBadge } from './MockBadge';
 import { setupTypeLabels } from '@/types/api';
-import type { ThesisCard, SymbolFactorBreakdown, ActionabilityTier, Regime } from '@/types/api';
-import type { SimStock, SimMarketContext } from '@/data/simTypes';
+import type { ThesisCard, SymbolFactorBreakdown, Regime, MarketContextFrame } from '@/types/api';
 
-// ─── Helpers to bridge SimStock → API types ───
+// ─── Helper to derive a ThesisCard from a SymbolFactorBreakdown ───
 
-function stockToFactorBreakdown(stock: SimStock, ctx?: SimMarketContext): SymbolFactorBreakdown {
+function stockToThesisCard(stock: SymbolFactorBreakdown, ctx?: MarketContextFrame): ThesisCard {
   return {
+    thesis_id: stock.l8_thesis.thesis_id,
     symbol: stock.symbol,
     direction: stock.direction,
-    last_updated: new Date().toISOString(),
-    l2_universe: {
-      fo_eligible: stock.fo_eligible,
-      fo_ban: stock.fo_ban,
-      mwpl_status: stock.mwpl_status,
-      earnings_flag: stock.earnings_flag,
-      liquidity_quality: stock.liquidity_quality,
-      lqs_score: stock.lqs,
-    },
-    l3_signals: {
-      ema_9: stock.ema_9,
-      ema_20: stock.ema_20,
-      ema_50: stock.ema_50,
-      ema_aligned: stock.ema_aligned,
-      supertrend_dir: stock.supertrend_dir,
-      adx: stock.adx,
-      rsi: stock.rsi,
-      macd_hist: stock.macd_hist,
-      atr: stock.atr,
-      atr_pct: stock.atr_pct,
-      bb_width: stock.bb_width,
-      vwap: stock.vwap,
-      above_vwap: stock.above_vwap,
-      roc_20: stock.roc_20,
-    },
-    l4_sector: {
-      sector_id: stock.sector_id,
-      sector_name: stock.sector_name,
-      rs_ratio: stock.rs_ratio,
-      rs_momentum: stock.rs_momentum,
-      rotation_rank: stock.sector_rank,
-    },
-    l5_scores: {
-      total: stock.score,
-      f1_trend: stock.f1_trend,
-      f2_momentum: stock.f2_momentum,
-      f3_volume: stock.f3_volume,
-      f4_volpos: stock.f4_volpos,
-      f5_structure: stock.f5_structure,
-      f6_sector: stock.f6_sector,
-      f7_risk: stock.f7_risk,
-      regime: (ctx?.regime as Regime) || 'Range-Bound',
-      modifiers: {},
-    },
-    l6_ranking: {
-      previous_score: stock.prev_score,
-      score_change: stock.score_change,
-      rank_movement: stock.rank_movement,
-      liquidity_quality: stock.liquidity_quality,
-    },
-    l7_confluence: {
-      score: stock.confluence_score,
-      max: 6,
-      checks: stock.checks,
-    },
-    l8_thesis: {
-      thesis_id: stock.thesis_id,
-      setup_type: stock.setup_type,
-      trigger: stock.trigger,
-      invalidation: stock.invalidation,
-      t1: stock.t1,
-      t2: stock.t2,
-      gross_rr: stock.gross_rr,
-      net_rr: stock.net_rr,
-      grade: stock.grade,
-      actionability_tier: stock.tier as ActionabilityTier,
-    },
-  };
-}
-
-function stockToThesisCard(stock: SimStock, ctx?: SimMarketContext): ThesisCard {
-  // Convert valid_until_min (minutes since midnight IST) to an ISO string for today
-  const now = new Date();
-  const istOffset = 5.5 * 60; // IST is UTC+5:30
-  const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
-  const istMinutes = utcMinutes + istOffset;
-  const diffMin = stock.valid_until_min - istMinutes;
-  const validUntil = new Date(now.getTime() + diffMin * 60000);
-
-  return {
-    thesis_id: stock.thesis_id,
-    symbol: stock.symbol,
-    direction: stock.direction,
-    setup_type: stock.setup_type,
-    trigger: stock.trigger,
-    invalidation: stock.invalidation,
-    t1: stock.t1,
-    t2: stock.t2,
-    gross_rr: stock.gross_rr,
-    net_rr: stock.net_rr,
-    grade: stock.grade,
-    confluence_score: stock.confluence_score,
-    time_decay_multiplier: stock.time_decay,
-    actionability_tier: stock.tier as ActionabilityTier,
-    valid_until: validUntil.toISOString(),
+    setup_type: stock.l8_thesis.setup_type,
+    trigger: stock.l8_thesis.trigger,
+    invalidation: stock.l8_thesis.invalidation,
+    t1: stock.l8_thesis.t1,
+    t2: stock.l8_thesis.t2,
+    gross_rr: stock.l8_thesis.gross_rr,
+    net_rr: stock.l8_thesis.net_rr,
+    grade: stock.l8_thesis.grade,
+    confluence_score: stock.l7_confluence.score,
+    time_decay_multiplier: 1.0,
+    actionability_tier: stock.l8_thesis.actionability_tier,
+    valid_until: new Date(Date.now() + 4 * 60 * 60 * 1000).toISOString(),
     preferred_regime: (ctx?.regime as Regime) || 'Range-Bound',
   };
 }
@@ -287,156 +204,6 @@ function LevelsChart({ thesis, price, vwap }: { thesis: ThesisCard; price: numbe
   );
 }
 
-// ─── CandleChart (new — SVG candle chart with level overlays) ───
-
-interface ChartLevel {
-  label: string;
-  value: number;
-  color: string;
-  style?: 'solid' | 'dashed' | 'dotted';
-}
-
-function CandleChart({
-  candles,
-  levels,
-  height = 200,
-}: {
-  candles: { o: number; h: number; l: number; c: number }[];
-  levels: ChartLevel[];
-  height?: number;
-}) {
-  if (!candles || candles.length === 0) return null;
-
-  const n = candles.length;
-  const W = 500;
-  const H = height;
-  const padT = 28;
-  const padR = 14;
-  const padB = 20;
-  const padL = 46;
-  const pw = W - padL - padR;
-  const ph = H - padT - padB;
-
-  // Price range including all candles + levels (with padding)
-  const allLevelValues = levels.map((lv) => lv.value);
-  const allPrices = [...candles.flatMap((c) => [c.h, c.l]), ...allLevelValues];
-  const minP = Math.min(...allPrices);
-  const maxP = Math.max(...allPrices);
-  const padFrac = (maxP - minP) * 0.06 || minP * 0.002;
-  const lo = minP - padFrac;
-  const hi = maxP + padFrac;
-  const rng = hi - lo;
-
-  const toY = (p: number) => padT + ph - ((p - lo) / rng) * ph;
-  const candleW = pw / n;
-  const bodyW = Math.max(1, candleW * 0.7);
-  const wickW = 1;
-
-  // First and last candle for OHLC header
-  const first = candles[0];
-  const last = candles[n - 1];
-  const highAll = Math.max(...candles.map((c) => c.h));
-  const lowAll = Math.min(...candles.map((c) => c.l));
-
-
-  return (
-    <div className="rounded border border-[var(--border-subtle)] bg-[var(--bg-surface-raised)] p-2">
-      {/* OHLC header */}
-      <div className="mb-1 flex items-center gap-3 text-[10px]">
-        <span className="font-mono tabular-nums text-[var(--text-tertiary)]">
-          O <span className="text-[var(--text-primary)]">{first.o.toFixed(2)}</span>
-        </span>
-        <span className="font-mono tabular-nums text-[var(--text-tertiary)]">
-          H <span className="text-[var(--text-primary)]">{highAll.toFixed(2)}</span>
-        </span>
-        <span className="font-mono tabular-nums text-[var(--text-tertiary)]">
-          L <span className="text-[var(--text-primary)]">{lowAll.toFixed(2)}</span>
-        </span>
-        <span className="font-mono tabular-nums text-[var(--text-tertiary)]">
-          C{' '}
-          <span
-            style={{ color: last.c >= first.o ? 'var(--trade-long)' : 'var(--trade-short)' }}
-          >
-            {last.c.toFixed(2)}
-          </span>
-        </span>
-        <span className="flex-1" />
-        <span className="text-[10px] text-[var(--text-tertiary)]">{n}m candles</span>
-      </div>
-
-      {/* SVG */}
-      <svg
-        width="100%"
-        height={H}
-        viewBox={`0 0 ${W} ${H}`}
-        className="overflow-visible"
-        style={{ display: 'block' }}
-        aria-label="Candle chart with strategy levels"
-        role="img"
-      >
-        {/* Horizontal grid lines */}
-        {[0, 0.25, 0.5, 0.75, 1].map((frac) => {
-          const y = padT + ph * (1 - frac);
-          const p = lo + rng * frac;
-          return (
-            <g key={frac}>
-              <line x1={padL} y1={y} x2={padL + pw} y2={y} stroke="var(--border-subtle)" strokeWidth={0.5} />
-              <text x={padL - 4} y={y + 3} textAnchor="end" fontSize={9} fill="var(--text-tertiary)">
-                {p.toFixed(0)}
-              </text>
-            </g>
-          );
-        })}
-
-        {/* Level overlay lines */}
-        {levels.map((lv) => {
-          const y = toY(lv.value);
-          const dash =
-            lv.style === 'dashed' ? '4,3' : lv.style === 'dotted' ? '1,3' : undefined;
-          return (
-            <g key={lv.label}>
-              <line
-                x1={padL}
-                y1={y}
-                x2={padL + pw}
-                y2={y}
-                stroke={lv.color}
-                strokeWidth={1}
-                strokeDasharray={dash}
-                opacity={0.65}
-              />
-              <text x={padL + pw + 3} y={y + 3} fontSize={8} fill={lv.color}>
-                {lv.label}
-              </text>
-            </g>
-          );
-        })}
-
-        {/* Candles */}
-        {candles.map((c, i) => {
-          const cx = padL + i * candleW + candleW / 2;
-          const up = c.c >= c.o;
-          const color = up ? 'var(--trade-long)' : 'var(--trade-short)';
-          const oy = toY(c.o);
-          const cy = toY(c.c);
-          const hy = toY(c.h);
-          const ly = toY(c.l);
-          const bodyHeight = Math.max(1, Math.abs(oy - cy));
-          const bodyTop = Math.min(oy, cy);
-          return (
-            <g key={i}>
-              {/* Wick */}
-              <line x1={cx} y1={hy} x2={cx} y2={ly} stroke={color} strokeWidth={wickW} />
-              {/* Body */}
-              <rect x={cx - bodyW / 2} y={bodyTop} width={bodyW} height={bodyHeight} fill={color} rx={0.5} />
-            </g>
-          );
-        })}
-      </svg>
-    </div>
-  );
-}
-
 // ─── FactorBar ───
 
 interface FactorBarProps {
@@ -568,9 +335,9 @@ interface DetailPanelProps {
   /** Symbol to load via API (fallback when stock is not provided). */
   symbol?: string;
   /** When provided, use this rich stock object directly instead of fetching. */
-  stock?: SimStock | null;
+  stock?: SymbolFactorBreakdown | null;
   /** Market context for regime-aware cards (L5, L10). */
-  ctx?: SimMarketContext;
+  ctx?: MarketContextFrame;
 }
 
 // ─── Component ───
@@ -584,9 +351,9 @@ export function DetailPanel({ symbol, stock: stockProp, ctx }: DetailPanelProps)
   // ── Resolve data source ──
 
   const data = useMemo<SymbolFactorBreakdown | null | undefined>(() => {
-    if (stockProp) return stockToFactorBreakdown(stockProp, ctx);
+    if (stockProp) return stockProp;
     return apiData;
-  }, [stockProp, ctx, apiData]);
+  }, [stockProp, apiData]);
 
   const thesis = useMemo<ThesisCard | null>(() => {
     if (stockProp) return stockToThesisCard(stockProp, ctx);
@@ -596,8 +363,8 @@ export function DetailPanel({ symbol, stock: stockProp, ctx }: DetailPanelProps)
     return null;
   }, [stockProp, ctx, symbol]);
 
-  const price = stockProp ? stockProp.price : (data ? data.l3_signals.vwap * 1.002 : 0);
-  const changePct = stockProp ? stockProp.change_pct : 0.85;
+  const price = stockProp ? (stockProp.price ?? (data?.l3_signals.vwap ?? 0) * 1.002) : (data ? (data.l3_signals.vwap ?? 0) * 1.002 : 0);
+  const changePct = stockProp ? (stockProp.change_pct ?? 0.85) : 0.85;
 
   // ── Loading state ──
 
@@ -655,7 +422,7 @@ export function DetailPanel({ symbol, stock: stockProp, ctx }: DetailPanelProps)
 
   // L9 status (from state)
   const stockObj = stockProp;
-  const l9_state = stockObj?.state;
+  const l9_state = stockObj?.l9_monitor?.state;
   const l9_status: LayerCardProps['status'] =
     l9_state === 'T1_HIT' || l9_state === 'ACTIVE'
       ? 'pass'
@@ -666,7 +433,7 @@ export function DetailPanel({ symbol, stock: stockProp, ctx }: DetailPanelProps)
           : null;
 
   // L10 status
-  const l10_tier = stockObj?.edge_tier;
+  const l10_tier = stockObj?.l10_edge?.edge_tier;
   const l10_status: LayerCardProps['status'] =
     l10_tier != null ? (l10_tier <= 2 ? 'pass' : l10_tier <= 4 ? 'warn' : 'na') : null;
 
@@ -698,20 +465,7 @@ export function DetailPanel({ symbol, stock: stockProp, ctx }: DetailPanelProps)
           {/* Levels chart */}
           {thesis && <LevelsChart thesis={thesis} price={price} vwap={data.l3_signals.vwap} />}
 
-          {/* Candle chart (only when SimStock with candles is available) */}
-          {stockObj && stockObj.candles && stockObj.candles.length > 0 && (
-            <CandleChart
-              candles={stockObj.candles}
-              levels={[
-                { label: 'T2', value: stockObj.t2, color: 'var(--trade-long)', style: 'dashed' },
-                { label: 'T1', value: stockObj.t1, color: 'var(--trade-long)', style: 'dashed' },
-                { label: 'VWAP', value: stockObj.vwap, color: 'var(--trade-neutral)', style: 'dotted' },
-                { label: 'TRG', value: stockObj.trigger, color: 'var(--accent)', style: 'solid' },
-                { label: 'Now', value: stockObj.price, color: 'var(--text-primary)', style: 'solid' },
-                { label: 'INV', value: stockObj.invalidation, color: 'var(--trade-short)', style: 'solid' },
-              ]}
-            />
-          )}
+          {/* Candle chart (only available via API candles endpoint — not in SymbolFactorBreakdown) */}
 
           {/* L2 / L3 / L4 cards */}
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -919,13 +673,13 @@ export function DetailPanel({ symbol, stock: stockProp, ctx }: DetailPanelProps)
                     <>
                       <KV
                         label="State"
-                        value={stockObj.state}
+                        value={stockObj.l9_monitor?.state ?? 'PENDING'}
                         color={
-                          stockObj.state === 'T1_HIT'
+                          (stockObj.l9_monitor?.state ?? 'PENDING') === 'T1_HIT'
                             ? 'var(--trade-long)'
-                            : stockObj.state === 'ACTIVE' || stockObj.state === 'TRIGGERED'
+                            : (stockObj.l9_monitor?.state ?? 'PENDING') === 'ACTIVE' || (stockObj.l9_monitor?.state ?? 'PENDING') === 'TRIGGERED'
                               ? 'var(--trade-neutral)'
-                              : stockObj.state === 'PENDING'
+                              : (stockObj.l9_monitor?.state ?? 'PENDING') === 'PENDING'
                                 ? 'var(--text-primary)'
                                 : 'var(--trade-short)'
                         }
@@ -933,13 +687,13 @@ export function DetailPanel({ symbol, stock: stockProp, ctx }: DetailPanelProps)
                       />
                       <KV
                         label="MFE"
-                        value={stockObj.mfe_R > 0 ? `+${stockObj.mfe_R.toFixed(2)}R` : '—'}
-                        color={stockObj.mfe_R > 0 ? 'var(--trade-long)' : undefined}
+                        value={(stockObj.l9_monitor?.mfe_R ?? 0) > 0 ? `+${(stockObj.l9_monitor?.mfe_R ?? 0).toFixed(2)}R` : '—'}
+                        color={(stockObj.l9_monitor?.mfe_R ?? 0) > 0 ? 'var(--trade-long)' : undefined}
                       />
                       <KV
                         label="MAE"
-                        value={stockObj.mae_R < 0 ? `${stockObj.mae_R.toFixed(2)}R` : '—'}
-                        color={stockObj.mae_R < 0 ? 'var(--trade-short)' : undefined}
+                        value={(stockObj.l9_monitor?.mae_R ?? 0) < 0 ? `${(stockObj.l9_monitor?.mae_R ?? 0).toFixed(2)}R` : '—'}
+                        color={(stockObj.l9_monitor?.mae_R ?? 0) < 0 ? 'var(--trade-short)' : undefined}
                       />
                     </>
                   ) : (
@@ -960,11 +714,11 @@ export function DetailPanel({ symbol, stock: stockProp, ctx }: DetailPanelProps)
                   {stockObj != null && (
                     <KV
                       label="Edge Tier"
-                      value={`T${stockObj.edge_tier}`}
+                      value={`T${stockObj.l10_edge?.edge_tier ?? 6}`}
                       color={
-                        stockObj.edge_tier <= 2
+                        (stockObj.l10_edge?.edge_tier ?? 6) <= 2
                           ? 'var(--trade-long)'
-                          : stockObj.edge_tier <= 4
+                          : (stockObj.l10_edge?.edge_tier ?? 6) <= 4
                             ? 'var(--trade-neutral)'
                             : 'var(--text-tertiary)'
                       }
@@ -1014,15 +768,15 @@ export function DetailPanel({ symbol, stock: stockProp, ctx }: DetailPanelProps)
                       />
                       <KV
                         label="Hit rate"
-                        value={`${((0.42 + (7 - Math.min(stockObj.edge_tier, 6)) * 0.05) * 100).toFixed(0)}%`}
+                        value={`${((0.42 + (7 - Math.min((stockObj.l10_edge?.edge_tier ?? 6), 6)) * 0.05) * 100).toFixed(0)}%`}
                       />
                       <KV
                         label="Wilson 95% CI"
-                        value={`[${((0.32 + (7 - Math.min(stockObj.edge_tier, 6)) * 0.04) * 100).toFixed(0)}%, ${((0.55 + (7 - Math.min(stockObj.edge_tier, 6)) * 0.05) * 100).toFixed(0)}%]`}
+                        value={`[${((0.32 + (7 - Math.min((stockObj.l10_edge?.edge_tier ?? 6), 6)) * 0.04) * 100).toFixed(0)}%, ${((0.55 + (7 - Math.min((stockObj.l10_edge?.edge_tier ?? 6), 6)) * 0.05) * 100).toFixed(0)}%]`}
                       />
                       <KV
                         label="N samples"
-                        value={`${20 + (7 - Math.min(stockObj.edge_tier, 6)) * 18}`}
+                        value={`${20 + (7 - Math.min((stockObj.l10_edge?.edge_tier ?? 6), 6)) * 18}`}
                       />
                     </>
                   ) : (

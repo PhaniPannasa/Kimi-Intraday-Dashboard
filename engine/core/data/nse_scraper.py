@@ -31,6 +31,20 @@ class NSEScraper:
         except Exception:
             return []
 
+    async def get_mwpl(self):
+        """Fetch MWPL (Minimum Workable Price List) from NSE.
+
+        MWPL restricts stocks from trading below a floor price.
+        Returns list of symbols under MWPL restriction.
+        """
+        try:
+            url = "https://www.nseindia.com/api/mwpl"
+            resp = await self.client.get(url)
+            resp.raise_for_status()
+            return resp.json() if isinstance(resp.json(), list) else []
+        except Exception:
+            return []
+
     async def close(self):
         await self.client.aclose()
 

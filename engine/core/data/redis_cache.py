@@ -7,8 +7,13 @@ class RedisCache:
     def __init__(self):
         self.client = redis.from_url(settings.redis_url, decode_responses=True)
 
-    async def ping(self):
-        return await self.client.ping()
+    async def ping(self) -> bool:
+        """Return True if Redis is reachable."""
+        try:
+            await self.client.ping()
+            return True
+        except Exception:
+            return False
 
     async def get(self, key: str):
         val = await self.client.get(key)

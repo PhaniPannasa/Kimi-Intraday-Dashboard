@@ -229,6 +229,28 @@ export interface PipelineStatusResponse {
   funnel_counts?: Record<string, { in: number; out: number }> | null;
 }
 
+// ── Constants imported from simTypes (shared across components) ──
+
+export const SECTORS: { id: number; name: string }[] = [
+  { id: 1, name: 'Financials' }, { id: 2, name: 'IT' }, { id: 3, name: 'Auto' },
+  { id: 4, name: 'FMCG' }, { id: 5, name: 'Pharma' }, { id: 6, name: 'Metals' },
+  { id: 7, name: 'Energy' }, { id: 8, name: 'Telecom' }, { id: 9, name: 'Realty' },
+  { id: 10, name: 'Cement' }, { id: 11, name: 'Power' },
+];
+
+export const LAYER_META: Record<string, { name: string; purpose: string }> = {
+  L1: { name: 'Market Context', purpose: 'Market regime, VIX band, breadth, and time-bucket context' },
+  L2: { name: 'Universe', purpose: 'Universe eligibility — F&O ban, MWPL, earnings, liquidity quality' },
+  L3: { name: 'Signals', purpose: 'Per-stock indicators — EMA alignment, ADX, RSI, MACD, ATR, BB, VWAP' },
+  L4: { name: 'Sector', purpose: 'Sector relative strength and rotation rank' },
+  L5: { name: 'Scoring', purpose: 'Multi-factor composite score (7 factors × regime weights)' },
+  L6: { name: 'Ranking', purpose: 'Cross-sectional ranking with hysteresis tracking' },
+  L7: { name: 'Confluence', purpose: 'Mechanical confluence pass/fail checks (6 gates)' },
+  L8: { name: 'Thesis', purpose: 'Thesis assembly — entry, invalidation, T1, T2, cost model, time decay' },
+  L9: { name: 'Monitor', purpose: 'Shadow ledger — MFE/MAE/R-multiple tracking per thesis' },
+  L10: { name: 'Edge', purpose: 'Edge statistics — Wilson CI, BH FDR, Bayesian bootstrap per tier' },
+};
+
 // ── New types for enhanced UI ──
 
 export interface ActivityEvent {

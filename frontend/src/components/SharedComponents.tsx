@@ -2,7 +2,7 @@
 
 import { useMemo } from 'react';
 import { cn } from '@/lib/utils';
-import type { SimStock } from '@/data/simTypes';
+import type { SymbolFactorBreakdown } from '@/types/api';
 import type { ReactNode } from 'react';
 
 /* ─── StatTile ──────────────────────────────────────── */
@@ -117,8 +117,8 @@ export function Histogram({
 export interface StockColumn {
   key: string;
   label: string;
-  render: (stock: SimStock) => ReactNode;
-  sortValue?: (stock: SimStock) => number | string;
+  render: (stock: SymbolFactorBreakdown) => ReactNode;
+  sortValue?: (stock: SymbolFactorBreakdown) => number | string;
   sortable?: boolean;
   align?: 'left' | 'right';
 }
@@ -132,10 +132,10 @@ export function StockTable({
   sortDir,
   onSort,
 }: {
-  stocks: SimStock[];
+  stocks: SymbolFactorBreakdown[];
   columns: StockColumn[];
   selectedSymbol?: string | null;
-  onSelect?: (stock: SimStock) => void;
+  onSelect?: (stock: SymbolFactorBreakdown) => void;
   sortKey?: string;
   sortDir?: 'asc' | 'desc';
   onSort?: (key: string) => void;

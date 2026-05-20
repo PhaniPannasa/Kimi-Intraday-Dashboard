@@ -41,6 +41,19 @@ class UpstoxRESTClient:
         response.raise_for_status()
         return response.json()
 
+    async def get_ltpc(self, instrument_keys: list[str]):
+        """Fetch LTPC for one or more instruments.
+
+        Upstox V3 endpoint: GET /v3/market/ltpc
+        Accepts comma-separated instrument_keys as query param.
+        Returns: {"data": {"NSE_INDEX|India VIX": {"ltp": 14.5, ...}, ...}}
+        """
+        url = "/v3/market/ltpc"
+        keys_str = ",".join(instrument_keys)
+        response = await self.client.get(url, params={"instrument_key": keys_str})
+        response.raise_for_status()
+        return response.json()
+
     async def close(self):
         await self.client.aclose()
 
