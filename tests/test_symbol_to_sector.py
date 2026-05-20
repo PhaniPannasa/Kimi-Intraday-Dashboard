@@ -246,3 +246,110 @@ class TestPipelineSectorLookupIntegration:
             f"Empty real_sector_data should yield default fallback, "
             f"got {captured['RELIANCE']}"
         )
+
+
+class TestL9SectorPersistence:
+    """Regression: the sector passed to l9.on_create (which is later persisted
+    to the thesis_outcomes hypertable feeding L10 edge stats) must be the
+    symbol's actual sector, not the hardcoded "Bank" placeholder.
+
+    The pre-fix code at engine/core/pipeline.py:906 read:
+        "sector": "Bank",
+    which contaminated every per-sector edge tier in L10 historical data.
+    """
+
+    def _preload_symbols(self, p, symbols):
+        for sym in symbols:
+            if sym not in p.symbol_map:
+                continue
+            df = pl.DataFrame({
+                "close": [2500.0] * 100,
+                "high": [2510.0] * 100,
+                "low": [2490.0] * 100,
+                "open": [2495.0] * 100,
+                "volume": [10000] * 100,
+            })
+            p.aggregator.pre_load(sym, df)
+
+    @pytest.mark.asyncio
+    async def test_l9_on_create_receives_per_symbol_sector(self):
+        """Verify l9.on_create() is invoked with sector matching
+        SYMBOL_TO_SECTOR[sym] for the synthesised thesis."""
+        from core.pipeline import PipelineOrchestrator, SYMBOL_TO_SECTOR
+        from models.frames import ThesisCard
+        from models.enums import Direction, SetupType
+
+        p = PipelineOrchestrator()
+        # Pre-load three symbols spanning three distinct sectors so a single
+        # cycle exercises the per-symbol lookup at the L9 write site.
+        self._preload_symbols(p, ["RELIANCE", "TCS", "HDFCBANK"])
+
+        def fake_assemble(sym, direction, bars, pd_df, l3_df, sigs,
+                          l2_flag, sector_data):
+            return ThesisCard(
+                thesis_id=f"test-{sym}",
+                symbol=sym,
+                direction=Direction.LONG,
+                setup_type=SetupType.ORB_15MIN,
+                trigger=2500.0,
+                invalidation=2480.0,
+                t1=2520.0,
+                t2=2540.0,
+                cost_breakdown={"total_cost_pct": 0.05},
+            )
+
+        captured_payloads = []
+
+        async def capture_on_create(payload):
+            captured_payloads.append(payload)
+
+        with patch.object(
+            p.upstox_rest, "get_historical_candle", new_callable=AsyncMock
+        ) as mock_hist, patch(
+            "core.pipeline.rank_sectors"
+        ) as mock_rank_sectors, patch.object(
+            p, "_try_assemble_thesis", side_effect=fake_assemble
+        ), patch.object(
+            p.l9, "on_create", side_effect=capture_on_create
+        ):
+            mock_hist.return_value = {
+                "data": {
+                    "candles": [
+                        ["2026-05-18T09:15:00+05:30",
+                         2500, 2510, 2490, 2505, 10000],
+                        ["2026-05-18T09:16:00+05:30",
+                         2505, 2515, 2495, 2510, 11000],
+                        ["2026-05-18T09:17:00+05:30",
+                         2510, 2520, 2500, 2515, 12000],
+                        ["2026-05-18T09:18:00+05:30",
+                         2515, 2525, 2505, 2520, 13000],
+                        ["2026-05-18T09:19:00+05:30",
+                         2520, 2530, 2510, 2525, 14000],
+                    ]
+                }
+            }
+            mock_rank_sectors.return_value = [
+                {"sector": "Energy", "rank": 1, "tailwind": True},
+                {"sector": "IT", "rank": 2, "tailwind": True},
+                {"sector": "Bank", "rank": 3, "tailwind": False},
+            ]
+
+            await p._run_live_cycle()
+
+        # At least one of the three symbols must have produced an L9 record.
+        assert captured_payloads, (
+            "l9.on_create was never called — no thesis assembled by L8 loop"
+        )
+
+        # For every captured payload, the sector MUST match SYMBOL_TO_SECTOR.
+        # If any payload has sector="Bank" for a non-Bank-sector symbol, the
+        # pre-fix regression has returned.
+        for payload in captured_payloads:
+            sym = payload["symbol"]
+            expected_sector = SYMBOL_TO_SECTOR.get(sym, "Bank")
+            assert payload["sector"] == expected_sector, (
+                f"L9 on_create payload for {sym} got sector "
+                f"{payload['sector']!r}, expected {expected_sector!r} "
+                f"(this is the Phase B Fix 4b regression — "
+                f"sector was hardcoded to 'Bank' before fix)"
+            )

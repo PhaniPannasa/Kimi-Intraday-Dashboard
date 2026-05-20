@@ -903,7 +903,7 @@ class PipelineOrchestrator:
                 "invalidation": thesis.invalidation,
                 "t1": thesis.t1,
                 "t2": thesis.t2,
-                "sector": "Bank",  # Placeholder until per-symbol sector mapping
+                "sector": SYMBOL_TO_SECTOR.get(sym, "Bank"),
                 "time_bucket": context.time_bucket if hasattr(context, "time_bucket") else "Trend Establishment",
                 "regime": context.regime if hasattr(context, "regime") else "Range-Bound",
                 "cost_breakdown": thesis.cost_breakdown,
