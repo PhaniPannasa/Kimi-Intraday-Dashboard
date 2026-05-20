@@ -239,7 +239,7 @@ function L2View({ stocks, ctx: _ctx }: { stocks: SymbolFactorBreakdown[]; ctx: M
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap gap-2">
-        <StatTile label="Source" value={all.length} hint="Nifty 50" borderColor="var(--accent)" />
+        <StatTile label="Source" value={all.length} hint="Nifty 100" borderColor="var(--accent)" />
         <StatTile
           label="Survivors"
           value={all.length - banned}

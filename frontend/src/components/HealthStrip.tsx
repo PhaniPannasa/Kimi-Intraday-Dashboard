@@ -1,6 +1,7 @@
 'use client';
 
 import { useMarketStore } from '@/stores/marketStore';
+import { useHealth } from '@/hooks/useHealth';
 import { MockBadge } from './MockBadge';
 import type { PipelineLayerStatus } from '@/types/api';
 
@@ -24,6 +25,8 @@ export function HealthStrip({
   lastCycleAt,
 }: HealthStripProps) {
   const source = useMarketStore((s) => s.sources['pipeline/status']);
+  const wsConnected = useMarketStore((s) => s.wsConnected);
+  const { data: health } = useHealth();
 
   if (!pipeline || pipeline.length === 0) {
     return (
@@ -43,10 +46,25 @@ export function HealthStrip({
   const layersOk = pipeline.filter((l) => l.status === 'ok').length;
   const totalDuration = pipeline.reduce((sum, l) => sum + l.duration_ms, 0);
 
+  const dbUp = health?.db_connected === true;
+  const redisUp = health?.redis_connected === true;
+  const tokenDays = health?.token_expires_in_days ?? 0;
   const items: HealthStripItem[] = [
-    { label: 'WS', value: 'connected', color: 'var(--trade-long)' },
-    { label: 'DB', value: 'timescaledb', color: 'var(--trade-long)' },
-    { label: 'Cache', value: 'redis', color: 'var(--trade-long)' },
+    {
+      label: 'WS',
+      value: wsConnected ? 'connected' : 'offline',
+      color: wsConnected ? 'var(--trade-long)' : 'var(--trade-short)',
+    },
+    {
+      label: 'DB',
+      value: dbUp ? 'timescaledb' : 'down',
+      color: dbUp ? 'var(--trade-long)' : 'var(--trade-short)',
+    },
+    {
+      label: 'Cache',
+      value: redisUp ? 'redis' : 'down',
+      color: redisUp ? 'var(--trade-long)' : 'var(--trade-short)',
+    },
     {
       label: 'Sched',
       value: `${layersOk}/${pipeline.length}`,
@@ -57,7 +75,7 @@ export function HealthStrip({
     },
     {
       label: 'Token',
-      value: paused ? 'PAUSED' : '342d',
+      value: paused ? 'PAUSED' : (tokenDays > 0 ? `${tokenDays}d` : '—'),
       color: paused ? 'var(--trade-neutral)' : 'var(--text-secondary)',
     },
     {

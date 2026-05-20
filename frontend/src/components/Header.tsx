@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useTelemetry } from '@/hooks/useTelemetry';
 
 interface HeaderProps {
   progress: number;
@@ -9,6 +10,19 @@ interface HeaderProps {
   onPauseToggle: () => void;
   learnMode?: boolean;
   onLearnToggle?: (v: boolean) => void;
+}
+
+/** Derive the connection-status label from market phase + paused flag.
+ *  LIVE only when pipeline phase is "live" AND not paused. */
+function statusLabel(phase: string | undefined, paused: boolean): { label: string; isLive: boolean } {
+  if (paused) return { label: 'PAUSED', isLive: false };
+  switch (phase) {
+    case 'live':       return { label: 'LIVE', isLive: true };
+    case 'pre-market': return { label: 'PRE-MARKET', isLive: false };
+    case 'closing':    return { label: 'CLOSING', isLive: false };
+    case 'closed':     return { label: 'CLOSED', isLive: false };
+    default:           return { label: 'OFFLINE', isLive: false };
+  }
 }
 
 function ClockIST() {
@@ -34,22 +48,19 @@ function ClockIST() {
   );
 }
 
-function ConnectionDot({ connected }: { connected: boolean }) {
+function ConnectionDot({ label, isLive }: { label: string; isLive: boolean }) {
+  const color = isLive ? 'var(--trade-long)' : 'var(--trade-neutral)';
   return (
     <span className="inline-flex items-center gap-1.5">
       <span
         className="animate-pulse-dot inline-block h-1.5 w-1.5 rounded-full"
-        style={{
-          background: connected ? 'var(--trade-long)' : 'var(--trade-short)',
-        }}
+        style={{ background: color }}
       />
       <span
         className="text-xs font-semibold tracking-wide"
-        style={{
-          color: connected ? 'var(--trade-long)' : 'var(--trade-short)',
-        }}
+        style={{ color }}
       >
-        {connected ? 'LIVE' : 'OFFLINE'}
+        {label}
       </span>
     </span>
   );
@@ -103,6 +114,8 @@ function RefreshRing({ progress, paused, cycle }: { progress: number; paused: bo
 }
 
 export function Header({ progress, paused, cycle, onPauseToggle, learnMode, onLearnToggle }: HeaderProps) {
+  const { data: telemetry } = useTelemetry();
+  const phase = telemetry?.pipeline?.phase;
   return (
     <header
       className="flex items-center gap-2 border-b border-[var(--border-subtle)] bg-[var(--bg-surface)] px-2 py-1.5 sm:gap-3 sm:px-4 sm:py-2"
@@ -191,8 +204,8 @@ export function Header({ progress, paused, cycle, onPauseToggle, learnMode, onLe
 
       <div className="h-4 w-px bg-[var(--border-subtle)]" />
 
-      {/* WS connection */}
-      <ConnectionDot connected={!paused} />
+      {/* WS connection — gated on real pipeline phase */}
+      <ConnectionDot {...statusLabel(phase, paused)} />
     </header>
   );
 }

@@ -60,7 +60,7 @@ export function FunnelStrip({
           <span className="font-mono text-sm font-bold tabular-nums text-[var(--text-primary)]">
             {sourceCount}
           </span>
-          <span className="text-[9px] text-[var(--text-tertiary)]">Nifty 50</span>
+          <span className="text-[9px] text-[var(--text-tertiary)]">Nifty 100</span>
         </div>
 
         {/* Layer tiles */}
