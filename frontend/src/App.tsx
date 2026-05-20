@@ -39,6 +39,20 @@ export default function App() {
 
   const longRankings = useMarketStore((s) => s.longRankings);
   const shortRankings = useMarketStore((s) => s.shortRankings);
+  const storedContext = useMarketStore((s) => s.context);
+  const ctx = storedContext ?? {
+    regime: 'Range-Bound',
+    regime_confidence: 0,
+    volatility_qualifier: 'Normal',
+    vix_band: 'Normal',
+    vix_trajectory: 'Stable',
+    vix_value: 0,
+    time_bucket: 'Unknown',
+    event_flag: null,
+    breadth: 'Mixed',
+    premarket_bias: 'Neutral',
+    bank_nifty_divergence: 0,
+  };
 
   const [selected, setSelected] = useState<RankingEntry | null>(null);
   const [viewMode, setViewMode] = useState<'journey' | 'cards'>('journey');
@@ -122,6 +136,7 @@ export default function App() {
           onSwitchLayer={onSwitchLayer}
           activityEvents={activityEvents?.events ?? []}
           handleSelectSymbol={handleSelectSymbol}
+          ctx={ctx}
         />
       ) : (
         <div className="flex flex-1 overflow-hidden p-2.5" style={{ gap: 10 }}>
@@ -144,6 +159,7 @@ export default function App() {
             onCloseLayer={onCloseLayer}
             onSwitchLayer={onSwitchLayer}
             setSelected={setSelected}
+            ctx={ctx}
           />
 
           <div className="flex w-[280px] shrink-0 flex-col gap-2">
@@ -172,7 +188,7 @@ export default function App() {
 
 function DetailColumn({
   selected, longRankings, shortRankings, viewMode, setViewMode, learnMode,
-  inspectedLayer, onCloseLayer, onSwitchLayer, setSelected,
+  inspectedLayer, onCloseLayer, onSwitchLayer, setSelected, ctx,
 }: {
   selected: RankingEntry | null;
   longRankings: RankingEntry[];
@@ -184,6 +200,7 @@ function DetailColumn({
   onCloseLayer: () => void;
   onSwitchLayer: (k: string) => void;
   setSelected: (s: RankingEntry | null) => void;
+  ctx: any;
 }) {
   return (
     <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
@@ -226,7 +243,7 @@ function DetailColumn({
           <LayerInspector
             layerKey={inspectedLayer}
             stocks={[...longRankings, ...shortRankings] as any}
-            ctx={null as any}
+            ctx={ctx}
             onClose={onCloseLayer}
             onSwitchLayer={onSwitchLayer}
             onSelectStock={(stock: any) => {
@@ -235,9 +252,9 @@ function DetailColumn({
             }}
           />
         ) : viewMode === 'cards' ? (
-          <DetailPanel symbol={selected?.symbol ?? ''} stock={selected as any} ctx={null as any} />
+          <DetailPanel symbol={selected?.symbol ?? ''} stock={selected as any} ctx={ctx} />
         ) : selected ? (
-          <LayerJourney entry={selected as any} ctx={null as any} learnMode={learnMode} activeLayer={-1} />
+          <LayerJourney entry={selected as any} ctx={ctx} learnMode={learnMode} activeLayer={-1} />
         ) : (
           <DetailPanel symbol="" />
         )}
@@ -250,7 +267,7 @@ function MobileLayout({
   longRankings, shortRankings, selected, setSelected,
   viewMode, setViewMode, learnMode,
   inspectedLayer, onCloseLayer, onSwitchLayer,
-  activityEvents, handleSelectSymbol,
+  activityEvents, handleSelectSymbol, ctx,
 }: {
   longRankings: RankingEntry[];
   shortRankings: RankingEntry[];
@@ -264,6 +281,7 @@ function MobileLayout({
   onSwitchLayer: (k: string) => void;
   activityEvents: any[];
   handleSelectSymbol: (sym: string) => void;
+  ctx: any;
 }) {
   const [tab, setTab] = useState<'rankings' | 'detail' | 'theses' | 'activity'>('rankings');
 
@@ -320,6 +338,7 @@ function MobileLayout({
             onCloseLayer={onCloseLayer}
             onSwitchLayer={onSwitchLayer}
             setSelected={setSelected}
+            ctx={ctx}
           />
         )}
         {tab === 'theses' && (

@@ -204,7 +204,7 @@ export function RankingsPanel({ onSelectSymbol, flashedSymbols = new Map(), entr
   // Pick source
   const apiEntries: RankingEntry[] = direction === 'LONG' ? (longsData ?? []) : (shortsData ?? []);
   const simFiltered = useMemo<RankingEntry[] | null>(() => {
-    if (!simEntries) return null;
+    if (!simEntries || simEntries.length === 0) return null;
     return simEntries.filter((s) => s.direction === direction);
   }, [simEntries, direction]);
 
