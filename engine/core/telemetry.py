@@ -18,23 +18,23 @@ _ENDPOINT_PREDICATES: dict[str, str] = {
     "/rankings/top25/short":
         "bool(p.latest_short_rankings)",
     "/rankings/{symbol}/factors":
-        "False",  # always mock until Phase B wires Redis factors:* cache reads
+        "False",  # still synthetic — not wired to real factor data yet
     "/thesis/{thesis_id}":
         "bool(p.latest_theses)",
     "/edge/tiers":
-        "False",  # always mock until Phase B accumulates L10 stats
+        "hasattr(p, 'l10') and bool(getattr(p.l10, 'edge_store', {}))",
     "/funnel/counts":
         "bool(p.latest_long_rankings or p.latest_short_rankings)",
     "/monitor/active-theses":
         "bool(p.latest_theses)",
     "/pipeline/status":
-        "False",  # set by route handler based on Redis cache hit
+        "p._cycle_number > 0",
     "/activity/events":
-        "False",  # always mock until Phase B tracks real activity
+        "bool(p.latest_long_rankings or p.latest_short_rankings)",
     "/market/candles/{symbol}":
-        "False",  # always mock until Phase B aggregator has bars
+        "False",  # depends on TimescaleDB — not available when DB offline
     "/health":
-        "bool(p.latest_long_rankings) or bool(p.latest_short_rankings)",
+        "p._cycle_number > 0",
 }
 
 
