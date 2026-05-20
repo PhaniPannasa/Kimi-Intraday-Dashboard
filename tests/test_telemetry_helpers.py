@@ -79,6 +79,29 @@ def test_layers_realness_l1_false_when_vix_is_placeholder():
     assert layers_realness(p)["l1_real"] is False
 
 
+def test_layers_realness_all_values_are_bools():
+    """Regression: l10_real used to leak a dict or MagicMock through the `and` short-circuit;
+    every l*_real value must be a Python bool so the JSON output is consistent."""
+    p = _fake_pipeline_empty()
+    flags = layers_realness(p)
+    for k, v in flags.items():
+        assert isinstance(v, bool), f"{k}={v!r} (type {type(v).__name__}) should be bool"
+
+
+def test_layers_realness_l10_true_when_edge_store_populated():
+    p = _fake_pipeline_empty()
+    p.l10 = MagicMock()
+    p.l10.edge_store = {("breakout", "trending-up"): "tier-1-stats"}
+    assert layers_realness(p)["l10_real"] is True
+
+
+def test_layers_realness_l10_false_when_edge_store_empty_dict():
+    p = _fake_pipeline_empty()
+    p.l10 = MagicMock()
+    p.l10.edge_store = {}
+    assert layers_realness(p)["l10_real"] is False
+
+
 def test_snapshot_returns_full_dict_shape():
     p = _fake_pipeline_empty()
     session = MagicMock()

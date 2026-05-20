@@ -73,17 +73,21 @@ def layers_realness(pipeline: Any) -> dict[str, bool]:
     has_rankings = bool(getattr(pipeline, "latest_long_rankings", []))
     has_theses = bool(getattr(pipeline, "latest_theses", []))
 
+    l10 = getattr(pipeline, "l10", None)
+    l10_edge_store = getattr(l10, "edge_store", None)
+    l10_real = isinstance(l10_edge_store, dict) and len(l10_edge_store) > 0
+
     return {
         "l1_real":  vix_real,
-        "l2_real":  getattr(pipeline, '_l2_flags_populated', False),  # True when NSE scraper runs
+        "l2_real":  bool(getattr(pipeline, '_l2_flags_populated', False)),  # True when NSE scraper runs
         "l3_real":  symbols_with_bars >= 1,
-        "l4_real":  getattr(pipeline, '_sector_rs_real', False),  # True when sector RS computed
+        "l4_real":  bool(getattr(pipeline, '_sector_rs_real', False)),  # True when sector RS computed
         "l5_real":  symbols_with_bars >= 1 and has_rankings,
         "l6_real":  has_rankings,
         "l7_real":  has_rankings,
         "l8_real":  has_theses,
         "l9_real":  has_theses,
-        "l10_real": getattr(pipeline.l10, 'edge_store', {}) and len(pipeline.l10.edge_store) > 0,
+        "l10_real": l10_real,
     }
 
 
