@@ -588,9 +588,15 @@ async def health(response: Response):
     except Exception:
         last_bar = None
 
+    # Determine Upstox WebSocket state independently of data realness
+    upstox_ws_state = "connected" if (
+        hasattr(pipeline, 'ws_client') and
+        getattr(pipeline.ws_client, 'is_connected', False)
+    ) else "idle"
+
     return HealthResponse(
         status="healthy",
-        websocket="connected" if has_real_data else "idle",
+        websocket=upstox_ws_state,
         last_bar_processed=last_bar if last_bar else datetime.now(timezone.utc),
         top25_long_count=long_count,
         top25_short_count=short_count,

@@ -29,6 +29,7 @@ export function useHealth() {
   return {
     data: query.data?.data,
     source: query.data?.source,
+    schedulerJobs: query.data?.data?.scheduler_jobs ?? 0,
     isLoading: query.isLoading,
     isError: query.isError,
   };

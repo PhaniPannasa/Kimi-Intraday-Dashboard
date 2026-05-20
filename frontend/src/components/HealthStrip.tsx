@@ -49,7 +49,19 @@ export function HealthStrip({
   const dbUp = health?.db_connected === true;
   const redisUp = health?.redis_connected === true;
   const tokenDays = health?.token_expires_in_days ?? 0;
+  const feedState = health?.websocket ?? 'idle';
+  const feedColor = feedState === 'connected'
+    ? 'var(--trade-long)'
+    : feedState === 'idle'
+      ? 'var(--trade-neutral)'
+      : 'var(--trade-short)';
+  const schedulerJobs = health?.scheduler_jobs ?? 0;
   const items: HealthStripItem[] = [
+    {
+      label: 'Feed',
+      value: feedState,
+      color: feedColor,
+    },
     {
       label: 'WS',
       value: wsConnected ? 'connected' : 'offline',
@@ -67,9 +79,9 @@ export function HealthStrip({
     },
     {
       label: 'Sched',
-      value: `${layersOk}/${pipeline.length}`,
+      value: schedulerJobs > 0 ? `${schedulerJobs} jobs` : 'idle',
       color:
-        layersOk === pipeline.length
+        schedulerJobs > 0
           ? 'var(--trade-long)'
           : 'var(--trade-neutral)',
     },
