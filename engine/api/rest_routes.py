@@ -1011,21 +1011,68 @@ async def active_theses(response: Response):
 @router.get("/market/candles/{symbol}")
 async def market_candles(
     symbol: str,
+    response: Response,
     interval: str = Query("1minute"),
     limit: int = Query(100, ge=1, le=500),
 ):
+    """OHLC candles for a chart panel.
+
+    Phase B contract: always returns 200 with shape
+    ``{symbol, interval, candles, overlays}``.  Sets ``X-Data-Source``
+    header to ``pipeline`` when TimescaleDB returns rows, ``mock`` when
+    the DB is unreachable or has no rows for the symbol.  Returns 404
+    only for unknown symbols.
+    """
     if symbol not in SYMBOL_DATA and symbol not in pipeline.symbol_map:
         raise HTTPException(status_code=404, detail=f"Unknown symbol: {symbol}")
-    rows = await timescale_db.fetch(
-        "SELECT ts, open, high, low, close, volume FROM market_bars WHERE instrument_key = $1 AND timeframe = $2 ORDER BY ts DESC LIMIT $3",
-        f"NSE_EQ|{symbol}", interval, limit,
-    )
-    candles = [
-        {"o": float(r["open"]), "h": float(r["high"]),
-         "l": float(r["low"]), "c": float(r["close"])}
-        for r in rows
-    ]
-    candles.reverse()
+
+    # Resolve the real instrument key.  Prefer pipeline.symbol_map (live
+    # ISIN-based map populated from SYMBOL_TO_INSTRUMENT_KEY); fall back
+    # to the static SYMBOL_DATA entry; only as a last resort use the
+    # naive ``NSE_EQ|{symbol}`` form (which will not match real rows).
+    instrument_key = pipeline.symbol_map.get(symbol)
+    if not instrument_key:
+        sd = SYMBOL_DATA.get(symbol)
+        if sd is not None:
+            instrument_key = sd["instrument_key"]
+        else:
+            instrument_key = f"NSE_EQ|{symbol}"
+
+    rows: List[dict] = []
+    try:
+        rows = await timescale_db.fetch(
+            "SELECT ts, open, high, low, close, volume FROM market_bars "
+            "WHERE instrument_key = $1 AND timeframe = $2 ORDER BY ts DESC LIMIT $3",
+            instrument_key, interval, limit,
+        )
+    except Exception:
+        # DB unreachable / pool not initialized / query error — fall
+        # through to the mock branch below.  Never propagate as a 500.
+        rows = []
+
+    if rows:
+        response.headers["X-Data-Source"] = "pipeline"
+        candles = [
+            {"o": float(r["open"]), "h": float(r["high"]),
+             "l": float(r["low"]), "c": float(r["close"])}
+            for r in rows
+        ]
+        candles.reverse()
+        return {"symbol": symbol, "interval": interval, "candles": candles, "overlays": None}
+
+    # Mock fallback: deterministic synthetic OHLC series so the chart
+    # panel always has something to render even when the DB is down or
+    # has no history for this symbol.
+    response.headers["X-Data-Source"] = "mock"
+    sd = SYMBOL_DATA.get(symbol)
+    base_price = sd["base_price"] if sd else 1000.0
+    cycle = _next_cycle()
+    # Stable per-symbol seed (sum of ord(c)) so mock output is deterministic
+    # across Python processes — hash() varies with PYTHONHASHSEED.
+    sym_seed = sum(ord(c) for c in symbol)
+    rng = _make_rng((cycle * 2654435761) ^ sym_seed)
+    candle_entries = _gen_candles(rng, base_price, count=min(limit, 60))
+    candles = [{"o": c.o, "h": c.h, "l": c.l, "c": c.c} for c in candle_entries]
     return {"symbol": symbol, "interval": interval, "candles": candles, "overlays": None}
 
 
