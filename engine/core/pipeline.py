@@ -8,6 +8,7 @@ PipelineOrchestrator  Drives L1-L10 layers with real bar data, market-session
 
 import asyncio
 import json
+import logging
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -15,6 +16,8 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 import polars as pl
+
+logger = logging.getLogger(__name__)
 
 from api.websocket_manager import manager as ws_manager
 from core.data.redis_cache import cache
@@ -588,7 +591,13 @@ class PipelineOrchestrator:
     # ------------------------------------------------------------------
 
     async def run_cycle(self):
-        """Dispatch to the appropriate phase handler."""
+        """Dispatch to the appropriate phase handler.
+
+        Phase "closed" runs a one-shot bootstrap when the engine starts after
+        15:30 IST so the dashboard has real (stale) data to render until the
+        next market open — instead of sitting on cycle_number=0 and forcing
+        every endpoint into the mock-fallback branch.
+        """
         phase = self.session.current_phase()
         if phase == "pre-market" and not self._pre_market_done:
             await self._run_pre_market_cycle()
@@ -596,6 +605,12 @@ class PipelineOrchestrator:
             await self._run_live_cycle()
         elif phase == "closing":
             await self._run_closing_cycle()
+        elif phase == "closed" and self._cycle_number == 0:
+            # Bootstrap: backfill yesterday's bars, then run one scoring pass.
+            logger.info("[Pipeline] Closed-phase bootstrap — backfilling + 1 scoring cycle")
+            if not self._pre_market_done:
+                await self._run_pre_market_cycle()
+            await self._run_live_cycle()
 
     # ------------------------------------------------------------------
     # Phase: pre-market  (cold-start backfill)
@@ -610,6 +625,7 @@ class PipelineOrchestrator:
         sem = asyncio.Semaphore(5)
 
         async def _fetch_one(sym: str, inst_key: str):
+            nonlocal success, fail
             async with sem:
                 try:
                     resp = await self.upstox_rest.get_historical_candle(
@@ -618,12 +634,20 @@ class PipelineOrchestrator:
                     df = self._candle_json_to_df(resp)
                     if len(df) > 0:
                         self.aggregator.pre_load(sym, df)
-                except Exception:
-                    pass  # Gracefully skip unreachable symbols
+                        success += 1
+                except Exception as e:
+                    fail += 1
+                    logger.warning("[PreMarket] %s: fetch failed — %s", sym, str(e)[:120])
 
+        success = 0
+        fail = 0
         await asyncio.gather(
             *[_fetch_one(sym, key) for sym, key in self.symbol_map.items()],
             return_exceptions=True,
+        )
+        logger.info(
+            "[PreMarket] backfill complete — success=%d fail=%d total=%d",
+            success, fail, len(self.symbol_map),
         )
         self._pre_market_done = True
 
@@ -713,9 +737,12 @@ class PipelineOrchestrator:
                     bf_errs += 1
                     if first_err is None:
                         first_err = str(e)[:120]
-            print(f"[Pipeline] Live backfill: loaded={backfill_count} errors={bf_errs}")
+            logger.info(
+                "[Pipeline] Live backfill: loaded=%d errors=%d",
+                backfill_count, bf_errs,
+            )
             if first_err:
-                print(f"[Pipeline] First backfill error: {first_err}")
+                logger.warning("[Pipeline] Live backfill first error: %s", first_err)
 
         # 1. Fetch Nifty context data
         nifty_df = None
@@ -810,7 +837,10 @@ class PipelineOrchestrator:
                 l3_err += 1
                 continue
 
-        print(f"[Pipeline] scored={len(scored)} bars_ok={bars_ok} bars_skip={bars_skip} l3_err={l3_err}")
+        logger.info(
+            "[Pipeline] cycle=%d scored=%d bars_ok=%d bars_skip=%d l3_err=%d",
+            self._cycle_number, len(scored), bars_ok, bars_skip, l3_err,
+        )
 
         # 3. L1: market context
         # Real VIX from Upstox historical candles (LTPC endpoint not available)
@@ -865,6 +895,10 @@ class PipelineOrchestrator:
         else:
             context = MarketContextFrame()
         self.latest_context = context
+        logger.info(
+            "[Pipeline] L1 context: regime=%s vix=%.2f breadth=%s bucket=%s",
+            context.regime, context.vix_value, context.breadth, context.time_bucket,
+        )
 
         # 4. L6: rank (returns tuple[list, dict] with metrics)
         if scored:
@@ -873,11 +907,16 @@ class PipelineOrchestrator:
             shorts = [r for r in rankings if r.net_rr <= 0]
             self.latest_long_rankings = longs
             self.latest_short_rankings = shorts
+            logger.info(
+                "[Pipeline] L6 rankings: long=%d short=%d",
+                len(longs), len(shorts),
+            )
         else:
             rankings = []
             ranking_metrics = {}
             longs = []
             shorts = []
+            logger.warning("[Pipeline] L6 rankings: scored empty, no rankings produced")
 
         # Push activity events to Redis
         try:
