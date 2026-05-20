@@ -53,8 +53,8 @@ Run commands from the **project ROOT** (not a subdirectory).
 # Install deps (editable, with test extras)
 pip install -e "./engine[.test]"
 
-# Run dev server (auto-reload on :8000 inside, :8170 outside Docker)
-cd engine && uvicorn main:app --host 0.0.0.0 --port 8170 --reload
+# Run dev server (auto-reload on :8000 inside, :8172 outside Docker)
+cd engine && uvicorn main:app --host 0.0.0.0 --port 8172 --reload
 
 # All tests (pytest.ini at root auto-discovers tests/)
 pytest
@@ -77,7 +77,7 @@ pytest tests/e2e/
 ```powershell
 cd frontend
 npm install
-npm run dev        # Vite on :8190, proxies /api → http://localhost:8170
+npm run dev        # Vite on :8190, proxies /api → http://localhost:8172
 npm run build      # tsc + vite build → dist/
 npm test           # vitest (jsdom, setup in src/test-setup.ts)
 ```
@@ -110,13 +110,14 @@ the canonical ports. Use these when hitting the stack from the host:
 |----------------|-----------|-------|--------------------------------------|
 | TimescaleDB    | 5432      | 8150  | dedicated 8150-8200 block for app    |
 | Redis          | 6379      | 8160  | dedicated 8150-8200 block for app    |
-| FastAPI engine | 8000      | 8170  | dedicated 8150-8200 block for app    |
+| FastAPI engine | 8000      | 8172  | dedicated 8150-8200 block for app    |
 | Caddy / web    | 80        | 8180  | dedicated 8150-8200 block for app    |
-| Vite dev       | —         | 8190  | proxies `/api` → :8170               |
+| Vite dev       | —         | 8190  | proxies `/api` → :8172, `/ws` → :8172 |
 
 **Reserved set for THIS app:** the entire **8150–8200** block. Live
-assignments: `8150` (DB), `8160` (Redis), `8170` (engine + WebSocket),
-`8180` (Caddy/web), `8190` (Vite dev); the rest of the block is held for
+assignments: `8150` (DB), `8160` (Redis), `8172` (engine + WebSocket),
+`8170` (unused — former engine port), `8180` (Caddy/web), `8190` (Vite dev);
+the rest of the block is held for
 future services in this app.
 **Do NOT touch** ports owned by other projects on this dev machine — notably
 `5173` (Python-Demo-Trading), `5175` (legacy port — left untouched),
@@ -153,7 +154,7 @@ Then verify: `curl -s https://kimi.intraday-edge-4zz.uk/api/health`
 
 The frontend WebSocket uses the relative path `/ws/v1/stream`
 (`frontend/src/hooks/useWebSocket.ts:5`); Vite's `/ws` proxy forwards it to
-`ws://localhost:8170`.
+`ws://localhost:8172`.
 
 ## Architecture
 
