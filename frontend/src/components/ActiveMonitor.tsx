@@ -25,7 +25,7 @@ export function ActiveMonitor() {
     trigger: number;
   };
 
-  const rows: DisplayRow[] = activeTheses.length > 0
+  const rawRows: DisplayRow[] = activeTheses.length > 0
     ? activeTheses.map((t) => ({
         thesis_id: t.thesis_id,
         symbol: t.symbol,
@@ -44,6 +44,14 @@ export function ActiveMonitor() {
         net_rr: t.net_rr,
         trigger: t.trigger,
       }));
+
+  // Dedupe by thesis_id. The mock backend can emit duplicate ids when
+  // multiple theses share symbol+setup+minute, and WS may push the same
+  // thesis_id repeatedly as state transitions (PENDING→TRIGGERED→T1_HIT).
+  // Keep the LAST occurrence so the latest state wins.
+  const rows: DisplayRow[] = Array.from(
+    new Map(rawRows.map((r) => [r.thesis_id, r])).values()
+  );
 
   // Click selects the matching ThesisCard from s.theses if one exists
   // (so DetailPanel still gets a fully-typed ThesisCard).
