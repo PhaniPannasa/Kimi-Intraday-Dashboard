@@ -18,7 +18,7 @@ class UpstoxRESTClient:
     async def get_historical_candle(
         self, instrument_key: str, interval: str = "1minute"
     ):
-        url = f"/v3/historical-candle/intraday/{instrument_key}/{interval}"
+        url = f"/v2/historical-candle/intraday/{instrument_key}/{interval}"
         response = await self.client.get(url)
         response.raise_for_status()
         return response.json()

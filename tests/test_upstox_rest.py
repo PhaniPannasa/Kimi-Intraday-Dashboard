@@ -14,7 +14,7 @@ def client():
 @respx.mock
 async def test_get_historical_candle(client):
     route = respx.get(
-        "https://api.upstox.com/v3/historical-candle/intraday/NSE_EQ|INE002A01018/1minute"
+        "https://api.upstox.com/v2/historical-candle/intraday/NSE_EQ|INE002A01018/1minute"
     ).mock(return_value=Response(200, json={"data": {"candles": []}}))
 
     result = await client.get_historical_candle("NSE_EQ|INE002A01018")
@@ -71,7 +71,7 @@ async def test_get_charges_brokerage(client):
 @respx.mock
 async def test_http_error_raises(client):
     respx.get(
-        "https://api.upstox.com/v3/historical-candle/intraday/NSE_EQ|INE002A01018/1minute"
+        "https://api.upstox.com/v2/historical-candle/intraday/NSE_EQ|INE002A01018/1minute"
     ).mock(return_value=Response(401, json={"error": "Unauthorized"}))
 
     with pytest.raises(Exception):
