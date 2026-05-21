@@ -24,6 +24,7 @@ import { EdgePanel } from '@/components/EdgePanel';
 import { AlertToast } from '@/components/AlertToast';
 import { HealthStrip } from '@/components/HealthStrip';
 import { DataSourceDebugPanel } from '@/components/DataSourceDebugPanel';
+import { ErrorBoundary } from '@/components/ErrorBoundary';
 import type { RankingEntry } from '@/types/api';
 
 export default function App() {
@@ -122,6 +123,7 @@ export default function App() {
       <RegimeBanner />
 
       {isMobile ? (
+        <ErrorBoundary>
         <MobileLayout
           longRankings={longRankings}
           shortRankings={shortRankings}
@@ -137,7 +139,9 @@ export default function App() {
           handleSelectSymbol={handleSelectSymbol}
           ctx={ctx}
         />
+        </ErrorBoundary>
       ) : (
+        <ErrorBoundary>
         <div className="flex flex-1 overflow-hidden p-2.5" style={{ gap: 10 }}>
           <div className="flex w-[360px] shrink-0 flex-col gap-2">
             <RankingsPanel
@@ -171,6 +175,7 @@ export default function App() {
             <EdgePanel />
           </div>
         </div>
+        </ErrorBoundary>
       )}
 
       <HealthStrip
