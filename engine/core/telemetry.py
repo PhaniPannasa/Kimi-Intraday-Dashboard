@@ -18,7 +18,7 @@ _ENDPOINT_PREDICATES: dict[str, str] = {
     "/rankings/top25/short":
         "bool(p.latest_short_rankings)",
     "/rankings/{symbol}/factors":
-        "False",  # still synthetic — not wired to real factor data yet
+        "bool(p.latest_long_rankings or p.latest_short_rankings)",  # real when pipeline has scored data (factors cached in Redis)
     "/thesis/{thesis_id}":
         "bool(p.latest_theses)",
     "/edge/tiers":
