@@ -597,6 +597,10 @@ class PipelineOrchestrator:
         # /rankings/{symbol}/factors endpoint can serve real data without Redis.
         self._latest_scored: list[dict] = []
 
+        # In-memory activity feed: events from pipeline cycles so
+        # /activity/events can serve real data without Redis.
+        self._activity_events: list[dict] = []
+
     # ------------------------------------------------------------------
     # Entry point
     # ------------------------------------------------------------------
@@ -963,7 +967,11 @@ class PipelineOrchestrator:
                         "detail": f"Rank movement, score {r.score:.1f}",
                         "cycle": cycle_num,
                     }
+                    self._activity_events.append(event)
                     await self.cache.client.lpush("pipeline:activity", json.dumps(event))
+            # Trim in-memory events to last 200
+            if len(self._activity_events) > 200:
+                self._activity_events = self._activity_events[-200:]
             await self.cache.client.ltrim("pipeline:activity", 0, 199)
         except Exception:
             pass

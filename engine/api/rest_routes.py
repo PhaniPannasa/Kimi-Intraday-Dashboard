@@ -1154,7 +1154,14 @@ async def funnel_counts(response: Response):
 
 @router.get("/activity/events", response_model=ActivityEventsResponse)
 async def activity_events(response: Response, since: int = Query(0), limit: int = Query(20, ge=1, le=50)):
-    response.headers["X-Data-Source"] = "mock"  # always mock pre-Phase-B
+    # Serve from in-memory pipeline event feed
+    events = getattr(pipeline, '_activity_events', [])
+    if events:
+        response.headers["X-Data-Source"] = "pipeline"
+        filtered = [ActivityEvent(**e) for e in events if e.get("cycle", 0) > since]
+        return ActivityEventsResponse(events=filtered[:limit], total=len(filtered))
+
+    response.headers["X-Data-Source"] = "mock"
     cycle = _next_cycle()
     rng = _make_rng(cycle * 65539)
     events = _gen_events(rng, cycle, limit=limit)
