@@ -1334,19 +1334,47 @@ export function LayerInspector({
   const meta = LAYER_META[layerKey];
   const ViewComponent = LAYER_VIEWS[layerKey];
 
-  // Guard: if stocks are RankingEntry[] (no factor data), show empty state
+  // Guard: if stocks are RankingEntry[] (no factor data), show ranking preview
   // instead of crashing. Same pattern as LayerJourney.tsx:545-554.
   if (!ViewComponent || !hasFactorData(stocks)) {
+    const stockList = stocks as unknown as Array<{
+      symbol: string; score?: number; direction?: string;
+      net_rr?: number; confluence_score?: number; setup_type?: number;
+      sector_name?: string; rank_movement?: string;
+    }>;
     return (
-      <div className="flex min-h-[300px] flex-col items-center justify-center rounded-lg border border-dashed border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6">
-        <div className="text-center">
-          <div className="text-sm font-medium text-[var(--text-secondary)]">
-            No factor data available
-          </div>
-          <div className="mt-1 max-w-xs text-[11px] text-[var(--text-tertiary)]">
-            Factor breakdown data is loaded per-symbol from the API.
-            Select a stock from Top 25 rankings to see its full layer-by-layer audit trail.
-          </div>
+      <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3">
+        <div className="mb-2 text-[11px] font-semibold text-[var(--text-secondary)]">
+          {meta?.label ?? layerKey} — Ranking Preview
+        </div>
+        <div className="mb-2 text-[9px] text-[var(--text-tertiary)]">
+          Factor breakdown not available. Showing ranking data for {stockList.length} entries.
+        </div>
+        <div className="max-h-[400px] overflow-y-auto">
+          <table className="w-full text-[10px]">
+            <thead>
+              <tr className="border-b border-[var(--border-subtle)] text-[var(--text-tertiary)]">
+                <th className="px-1 py-1 text-left">#</th>
+                <th className="px-1 py-1 text-left">Symbol</th>
+                <th className="px-1 py-1 text-right">Score</th>
+                <th className="px-1 py-1 text-right">Dir</th>
+                <th className="px-1 py-1 text-right">R:R</th>
+                <th className="px-1 py-1 text-right">Conf</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stockList.slice(0, 25).map((s, i) => (
+                <tr key={s.symbol} className="border-b border-[var(--border-subtle)]/30 hover:bg-[var(--bg-surface-raised)]">
+                  <td className="px-1 py-1 text-[var(--text-tertiary)]">{i + 1}</td>
+                  <td className="px-1 py-1 font-medium text-[var(--text-primary)]">{s.symbol}</td>
+                  <td className="px-1 py-1 text-right text-[var(--text-secondary)]">{s.score?.toFixed(1) ?? '—'}</td>
+                  <td className="px-1 py-1 text-right">{s.direction ?? '—'}</td>
+                  <td className="px-1 py-1 text-right text-[var(--text-secondary)]">{s.net_rr?.toFixed(2) ?? '—'}</td>
+                  <td className="px-1 py-1 text-right text-[var(--text-secondary)]">{s.confluence_score ?? '—'}/6</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
     );

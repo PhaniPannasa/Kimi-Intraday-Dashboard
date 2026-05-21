@@ -23,6 +23,7 @@ def assemble_orb_15(
     pdl: float,
     tick_size: float = 0.05,
     valid_until: datetime | None = None,
+    **kwargs,
 ) -> ThesisCard:
     orb_range = orb_high - orb_low
 

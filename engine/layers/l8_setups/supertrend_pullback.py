@@ -20,6 +20,7 @@ def assemble_supertrend_pullback(
     atr: float,
     tick_size: float = 0.05,
     valid_until: datetime | None = None,
+    **kwargs,
 ) -> ThesisCard:
     if direction == Direction.LONG:
         trigger = supertrend_line + tick_size

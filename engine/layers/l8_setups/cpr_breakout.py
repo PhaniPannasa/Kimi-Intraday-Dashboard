@@ -24,6 +24,7 @@ def assemble_cpr_breakout(
     s2: float,
     tick_size: float = 0.05,
     valid_until: datetime | None = None,
+    **kwargs,
 ) -> ThesisCard:
     cpr_width = abs(tc - bc)
 

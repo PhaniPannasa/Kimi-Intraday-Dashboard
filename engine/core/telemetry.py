@@ -70,7 +70,7 @@ def layers_realness(pipeline: Any) -> dict[str, bool]:
         if getattr(buf, "_completed", {}) and any(buf._completed.values())
     )
 
-    has_rankings = bool(getattr(pipeline, "latest_long_rankings", []))
+    has_rankings = bool(getattr(pipeline, "latest_long_rankings", []) or getattr(pipeline, "latest_short_rankings", []))
     has_theses = bool(getattr(pipeline, "latest_theses", []))
 
     l10 = getattr(pipeline, "l10", None)
@@ -107,16 +107,21 @@ def snapshot(
     )
 
     last_bar_at = None
-    if buffers:
+    for buf in buffers.values():
         try:
-            timestamps = [
-                bar["ts"]
-                for buf in buffers.values()
-                for bars in getattr(buf, "_completed", {}).values()
-                for bar in bars
-            ]
-            if timestamps:
-                last_bar_at = max(timestamps).isoformat() if hasattr(max(timestamps), "isoformat") else str(max(timestamps))
+            for bars in getattr(buf, "_completed", {}).values():
+                for bar in bars:
+                    try:
+                        ts = bar.get("ts") if isinstance(bar, dict) else None
+                        if ts is not None and (last_bar_at is None or ts > last_bar_at):
+                            last_bar_at = ts
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+    if last_bar_at is not None:
+        try:
+            last_bar_at = last_bar_at.isoformat() if hasattr(last_bar_at, "isoformat") else str(last_bar_at)
         except Exception:
             last_bar_at = None
 

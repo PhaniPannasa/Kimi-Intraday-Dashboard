@@ -84,6 +84,7 @@ class L6Ranking:
             ranked.append(RankingEntry(
                 symbol=symbol,
                 instrument_key=stock.get("instrument_key", ""),
+                direction=stock.get("direction", "LONG"),
                 score=stock["score"],
                 setup_type=stock.get("setup_type", 1),
                 confluence_score=stock.get("confluence_score", 0),
@@ -91,6 +92,8 @@ class L6Ranking:
                 actionability_tier=stock.get("actionability_tier", "Research-Only"),
                 rank_movement=movement,
                 liquidity_quality=stock.get("liquidity_quality", "Good"),
+                sector_name=stock.get("sector_name", ""),
+                sector_id=stock.get("sector_id", 0),
             ))
 
             if symbol not in self._rank_history:

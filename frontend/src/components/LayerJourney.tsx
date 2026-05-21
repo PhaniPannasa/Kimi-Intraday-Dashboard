@@ -539,9 +539,6 @@ function Station({
 
 /* ─── Main component ────────────────────────────────── */
 export function LayerJourney({ entry, ctx, learnMode, activeLayer }: LayerJourneyProps) {
-  // entry may be a basic RankingEntry cast as SymbolFactorBreakdown by callers
-  // that haven't fetched factor data yet (e.g. auto-select on first ranking
-  // load). evaluateLayers crashes on the nested fields, so guard upstream.
   const hasFactorData =
     entry != null &&
     (entry as Partial<SymbolFactorBreakdown>).l2_universe != null &&
@@ -554,7 +551,7 @@ export function LayerJourney({ entry, ctx, learnMode, activeLayer }: LayerJourne
     return evaluateLayers(entry, ctx);
   }, [entry, ctx, hasFactorData]);
 
-  if (!entry || !layers) {
+  if (!entry) {
     return (
       <div className="flex h-48 items-center justify-center rounded-md border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
         <div className="text-center">
@@ -563,6 +560,49 @@ export function LayerJourney({ entry, ctx, learnMode, activeLayer }: LayerJourne
           </div>
           <div className="mt-1 text-[11px] text-[var(--text-tertiary)]">
             Click a row in the Top 25 table to see its layer-by-layer audit trail
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show ranking summary when factor data is unavailable (RankingEntry cast)
+  if (!layers) {
+    const isLong = (entry as any).direction === 'LONG' || (entry as any).direction === 'LONG';
+    return (
+      <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4">
+        <div className="mb-3 flex items-center gap-2">
+          <span className="text-[14px] font-bold text-[var(--text-primary)]">
+            {(entry as any).symbol}
+          </span>
+          <VerdictPill verdict={(entry as any).direction === 'LONG' ? 'PASS' : 'WARN'}>
+            {(entry as any).direction}
+          </VerdictPill>
+          <span className="text-[11px] text-[var(--text-tertiary)]">
+            Rank #{(entry as any).rank ?? '—'} · Score {(entry as any).score?.toFixed(1) ?? '—'}
+          </span>
+        </div>
+        <div className="mb-3 grid grid-cols-3 gap-2">
+          {[
+            ['Setup', setupTypeLabels[(entry as any).setup_type as keyof typeof setupTypeLabels] ?? `Type ${(entry as any).setup_type}`],
+            ['Confluence', `${(entry as any).confluence_score}/6`],
+            ['Net R:R', (entry as any).net_rr?.toFixed(2) ?? '—'],
+            ['Tier', (entry as any).actionability_tier ?? '—'],
+            ['Liquidity', (entry as any).liquidity_quality ?? '—'],
+            ['Movement', (entry as any).rank_movement ?? '—'],
+          ].map(([label, val]) => (
+            <div key={label as string} className="rounded bg-[var(--bg-base)] px-2 py-1">
+              <div className="text-[9px] uppercase tracking-wider text-[var(--text-tertiary)]">{label}</div>
+              <div className="text-[12px] font-medium text-[var(--text-primary)]">{val}</div>
+            </div>
+          ))}
+        </div>
+        <div className="rounded border border-[var(--border-subtle)] bg-[var(--bg-surface-raised)]/30 px-3 py-2">
+          <div className="text-[10px] font-medium text-[var(--text-secondary)]">
+            Layer-by-layer audit trail requires factor breakdown data
+          </div>
+          <div className="mt-0.5 text-[10px] text-[var(--text-tertiary)]">
+            Available via GET /rankings/{(entry as any).symbol}/factors when the factor endpoint is wired to pipeline data.
           </div>
         </div>
       </div>

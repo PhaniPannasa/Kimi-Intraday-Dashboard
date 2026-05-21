@@ -429,6 +429,11 @@ class TickBuffer:
             return pl.DataFrame(
                 {"open": [], "high": [], "low": [], "close": [], "volume": []},
             )
+        # Normalize ts precision: mix of REST (ms) and WS (μs) timestamps
+        # can cause Polars ComputeError when building the DataFrame.
+        for b in bars:
+            if isinstance(b.get("ts"), datetime):
+                b["ts"] = b["ts"].replace(microsecond=0)
         return pl.DataFrame(bars)
 
     # ------------------------------------------------------------------
@@ -667,6 +672,8 @@ class PipelineOrchestrator:
         atr_val = signals.get("atr", max((orb_high - orb_low) * 0.5, 1.0))
         signals["direction"] = direction
 
+        thesis_errs = 0
+        first_thesis_err = None
         for setup_type in range(1, 7):
             try:
                 thesis = self.l8.assemble(
@@ -690,8 +697,16 @@ class PipelineOrchestrator:
                 )
                 if thesis.trigger > 0 and thesis.invalidation > 0:
                     return thesis
-            except Exception:
+            except Exception as e:
+                thesis_errs += 1
+                if first_thesis_err is None:
+                    first_thesis_err = str(e)[:120]
                 continue
+        if thesis_errs and first_thesis_err:
+            logger.warning(
+                "[Pipeline] Thesis assembly errors for %s: %d/6 setups failed, first=%s",
+                symbol, thesis_errs, first_thesis_err,
+            )
         return None
 
     # ------------------------------------------------------------------
@@ -701,6 +716,7 @@ class PipelineOrchestrator:
     async def _run_live_cycle(self):
         now = datetime.now(timezone.utc)
         self._cycle_number += 1
+        self.last_cycle_at = now
 
         # L2: Fetch NSE flags once per cycle (cached for all symbols)
         l2_flags: dict[str, dict] = {}
@@ -748,7 +764,7 @@ class PipelineOrchestrator:
         nifty_df = None
         try:
             nifty_resp = await self.upstox_rest.get_historical_candle(
-                NIFTY_INDEX_KEY, "5minute",
+                NIFTY_INDEX_KEY, "1minute",
             )
             nifty_df = self._candle_json_to_df(nifty_resp)
         except Exception:
@@ -823,6 +839,10 @@ class PipelineOrchestrator:
                 conf_score = self.l7.compute(conf_data)
                 result["confluence_score"] = conf_score
                 result["setup_type"] = 1  # Default placeholder; overwritten by L8 thesis assembly
+                result["direction"] = signals.get("direction", "LONG")
+                result["net_rr"] = max(0.2, conf_score * 0.35)
+                result["sector_name"] = sector_name
+                result["sector_id"] = sector_data.get("rank", 6)
                 result["actionability_tier"] = "Research-Only"
                 # Compute liquidity quality from bar volume data
                 vol_series = bars["volume"].to_numpy()
@@ -862,7 +882,7 @@ class PipelineOrchestrator:
             bn_resp = None
             try:
                 bn_resp = await self.upstox_rest.get_historical_candle(
-                    "NSE_INDEX|Nifty Bank", "5minute",
+                    "NSE_INDEX|Nifty Bank", "1minute",
                 )
                 bn_df = self._candle_json_to_df(bn_resp)
             except Exception:
@@ -893,7 +913,7 @@ class PipelineOrchestrator:
                 bank_nifty_divergence=bank_nifty_divergence,
             )
         else:
-            context = MarketContextFrame()
+            context = MarketContextFrame(vix_value=vix_value)
         self.latest_context = context
         logger.info(
             "[Pipeline] L1 context: regime=%s vix=%.2f breadth=%s bucket=%s",
@@ -903,8 +923,8 @@ class PipelineOrchestrator:
         # 4. L6: rank (returns tuple[list, dict] with metrics)
         if scored:
             rankings, ranking_metrics = self.l6.rank(scored)
-            longs = [r for r in rankings if r.net_rr > 0]
-            shorts = [r for r in rankings if r.net_rr <= 0]
+            longs = [r for r in rankings if r.direction == Direction.LONG]
+            shorts = [r for r in rankings if r.direction == Direction.SHORT]
             self.latest_long_rankings = longs
             self.latest_short_rankings = shorts
             logger.info(
@@ -929,7 +949,7 @@ class PipelineOrchestrator:
                         "ts": now.isoformat(),
                         "type": movement_str,
                         "symbol": r.symbol,
-                        "direction": "LONG" if r.net_rr > 0 else "SHORT",
+                        "direction": r.direction.value if hasattr(r.direction, 'value') else str(r.direction),
                         "text": f"{r.symbol} {movement_str} (score {r.score:.1f})",
                         "detail": f"Rank movement, score {r.score:.1f}",
                         "cycle": cycle_num,
@@ -950,7 +970,7 @@ class PipelineOrchestrator:
             pd_df = bars.to_pandas()
             l3_df = self.l3.compute(pd_df)
             sigs = self._extract_l3_signals(sym, l3_df)
-            direction = "LONG" if rank_entry.net_rr > 0 else "SHORT"
+            direction = rank_entry.direction.value if hasattr(rank_entry.direction, 'value') else str(rank_entry.direction)
             sigs["direction"] = direction
 
             thesis = self._try_assemble_thesis(

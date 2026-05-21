@@ -25,6 +25,7 @@ def assemble_mean_reversion(
     vwap: float,
     tick_size: float = 0.05,
     valid_until: datetime | None = None,
+    **kwargs,
 ) -> ThesisCard:
     if direction == Direction.LONG:
         trigger = bb_lower_2sigma - tick_size

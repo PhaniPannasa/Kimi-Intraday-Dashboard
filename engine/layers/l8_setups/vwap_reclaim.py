@@ -20,6 +20,7 @@ def assemble_vwap_reclaim(
     atr: float,
     tick_size: float = 0.05,
     valid_until: datetime | None = None,
+    **kwargs,
 ) -> ThesisCard:
     if direction == Direction.LONG:
         trigger = vwap + tick_size

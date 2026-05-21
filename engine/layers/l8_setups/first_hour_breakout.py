@@ -22,6 +22,7 @@ def assemble_first_hour_breakout(
     pdl: float,
     tick_size: float = 0.05,
     valid_until: datetime | None = None,
+    **kwargs,
 ) -> ThesisCard:
     fh_range = fh_high - fh_low
 
