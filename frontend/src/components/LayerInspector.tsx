@@ -1334,43 +1334,99 @@ export function LayerInspector({
   const meta = LAYER_META[layerKey];
   const ViewComponent = LAYER_VIEWS[layerKey];
 
-  // Guard: if stocks are RankingEntry[] (no factor data), show ranking preview
+  // Guard: if stocks are RankingEntry[] (no factor data), show layer-specific fallback
   // instead of crashing. Same pattern as LayerJourney.tsx:545-554.
   if (!ViewComponent || !hasFactorData(stocks)) {
     const stockList = stocks as unknown as Array<{
       symbol: string; score?: number; direction?: string;
       net_rr?: number; confluence_score?: number; setup_type?: number;
-      sector_name?: string; rank_movement?: string;
+      sector_name?: string; rank_movement?: string; price?: number;
+      change_pct?: number; edge_tier?: number;
     }>;
+
+    // L1: Show live market context from ctx
+    if (layerKey === 'l1_market_context') {
+      const regimeColor = ctx.regime === 'Trending-Up' ? 'var(--trade-long)' : ctx.regime === 'Trending-Down' ? 'var(--trade-short)' : 'var(--text-secondary)';
+      return (
+        <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4">
+          <div className="mb-2 text-[11px] font-semibold text-[var(--text-secondary)]">
+            {meta?.label ?? 'L1 Market Context'} — Live Data
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              ['Regime', ctx.regime, regimeColor],
+              ['Confidence', `${(ctx.regime_confidence * 100).toFixed(0)}%`],
+              ['VIX', `${ctx.vix_value?.toFixed(2) ?? '—'}`],
+              ['VIX Band', ctx.vix_band],
+              ['VIX Trajectory', ctx.vix_trajectory],
+              ['Breadth', ctx.breadth],
+              ['Volatility', ctx.volatility_qualifier],
+              ['Time Bucket', ctx.time_bucket],
+              ['Event Flag', ctx.event_flag ?? 'None'],
+              ['Premarket Bias', ctx.premarket_bias],
+              ['Bank Nifty Δ', `${ctx.bank_nifty_divergence?.toFixed(4) ?? '—'}`],
+              ['Feeding', `${stockList.length} symbols`],
+            ].map(([label, val, color]) => (
+              <div key={label as string} className="rounded bg-[var(--bg-base)] px-2 py-1.5">
+                <div className="text-[9px] uppercase tracking-wider text-[var(--text-tertiary)]">{label}</div>
+                <div className="text-[12px] font-medium" style={{ color: (color as string) ?? 'var(--text-primary)' }}>{val as string}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    // L2-L10: Layer-specific ranking preview
+    const layerCols: Record<string, Array<{h: string; k: string; w: string}>> = {
+      l2_universe: [{h:'Symbol',k:'symbol',w:'left'},{h:'Score',k:'score',w:'right'},{h:'Sector',k:'sector_name',w:'left'},{h:'Dir',k:'direction',w:'right'}],
+      l3_signals: [{h:'Symbol',k:'symbol',w:'left'},{h:'Score',k:'score',w:'right'},{h:'Dir',k:'direction',w:'right'},{h:'R:R',k:'net_rr',w:'right'}],
+      l4_sector: [{h:'Symbol',k:'symbol',w:'left'},{h:'Sector',k:'sector_name',w:'left'},{h:'Score',k:'score',w:'right'},{h:'R:R',k:'net_rr',w:'right'}],
+      l5_scoring: [{h:'Symbol',k:'symbol',w:'left'},{h:'Score',k:'score',w:'right'},{h:'Conf',k:'confluence_score',w:'right'},{h:'R:R',k:'net_rr',w:'right'}],
+      l6_ranking: [{h:'#',k:'#',w:'left'},{h:'Symbol',k:'symbol',w:'left'},{h:'Score',k:'score',w:'right'},{h:'Dir',k:'direction',w:'right'},{h:'Move',k:'rank_movement',w:'right'},{h:'R:R',k:'net_rr',w:'right'}],
+      l7_confluence: [{h:'Symbol',k:'symbol',w:'left'},{h:'Conf',k:'confluence_score',w:'right'},{h:'Score',k:'score',w:'right'},{h:'R:R',k:'net_rr',w:'right'}],
+      l8_thesis: [{h:'Symbol',k:'symbol',w:'left'},{h:'Score',k:'score',w:'right'},{h:'Setup',k:'setup_type',w:'left'},{h:'R:R',k:'net_rr',w:'right'}],
+      l9_monitor: [{h:'Symbol',k:'symbol',w:'left'},{h:'Score',k:'score',w:'right'},{h:'Price',k:'price',w:'right'},{h:'Chg%',k:'change_pct',w:'right'}],
+      l10_edge: [{h:'Symbol',k:'symbol',w:'left'},{h:'Score',k:'score',w:'right'},{h:'Tier',k:'edge_tier',w:'right'},{h:'R:R',k:'net_rr',w:'right'}],
+    };
+    const cols = layerCols[layerKey] ?? [{h:'Symbol',k:'symbol',w:'left'},{h:'Score',k:'score',w:'right'},{h:'Dir',k:'direction',w:'right'},{h:'R:R',k:'net_rr',w:'right'}];
+
     return (
       <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3">
         <div className="mb-2 text-[11px] font-semibold text-[var(--text-secondary)]">
-          {meta?.label ?? layerKey} — Ranking Preview
+          {meta?.label ?? layerKey} — Ranking Data
         </div>
         <div className="mb-2 text-[9px] text-[var(--text-tertiary)]">
-          Factor breakdown not available. Showing ranking data for {stockList.length} entries.
+          {stockList.length} entries · Factor breakdown not yet available for this layer
         </div>
         <div className="max-h-[400px] overflow-y-auto">
           <table className="w-full text-[10px]">
             <thead>
               <tr className="border-b border-[var(--border-subtle)] text-[var(--text-tertiary)]">
-                <th className="px-1 py-1 text-left">#</th>
-                <th className="px-1 py-1 text-left">Symbol</th>
-                <th className="px-1 py-1 text-right">Score</th>
-                <th className="px-1 py-1 text-right">Dir</th>
-                <th className="px-1 py-1 text-right">R:R</th>
-                <th className="px-1 py-1 text-right">Conf</th>
+                {cols.map(c => <th key={c.k} className={`px-1 py-1 text-${c.w}`}>{c.h}</th>)}
               </tr>
             </thead>
             <tbody>
               {stockList.slice(0, 25).map((s, i) => (
                 <tr key={s.symbol} className="border-b border-[var(--border-subtle)]/30 hover:bg-[var(--bg-surface-raised)]">
-                  <td className="px-1 py-1 text-[var(--text-tertiary)]">{i + 1}</td>
-                  <td className="px-1 py-1 font-medium text-[var(--text-primary)]">{s.symbol}</td>
-                  <td className="px-1 py-1 text-right text-[var(--text-secondary)]">{s.score?.toFixed(1) ?? '—'}</td>
-                  <td className="px-1 py-1 text-right">{s.direction ?? '—'}</td>
-                  <td className="px-1 py-1 text-right text-[var(--text-secondary)]">{s.net_rr?.toFixed(2) ?? '—'}</td>
-                  <td className="px-1 py-1 text-right text-[var(--text-secondary)]">{s.confluence_score ?? '—'}/6</td>
+                  {cols.map(c => {
+                    let val: string;
+                    if (c.k === '#') val = String(i + 1);
+                    else if (c.k === 'score') val = s.score?.toFixed(1) ?? '—';
+                    else if (c.k === 'net_rr') val = s.net_rr?.toFixed(2) ?? '—';
+                    else if (c.k === 'change_pct') val = s.change_pct != null ? `${s.change_pct >= 0 ? '+' : ''}${s.change_pct.toFixed(2)}%` : '—';
+                    else if (c.k === 'price') val = s.price != null ? `₹${s.price.toFixed(1)}` : '—';
+                    else if (c.k === 'confluence_score') val = `${s.confluence_score ?? '—'}/6`;
+                    else if (c.k === 'edge_tier') val = s.edge_tier != null ? `T${s.edge_tier}` : '—';
+                    else if (c.k === 'setup_type') val = setupTypeLabels[s.setup_type as keyof typeof setupTypeLabels] ?? `T${s.setup_type}`;
+                    else val = (s as any)[c.k] ?? '—';
+                    const isNum = c.w === 'right';
+                    return (
+                      <td key={c.k} className={`px-1 py-1 ${isNum ? 'text-right' : ''} ${c.k === 'symbol' ? 'font-medium text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'}`}>
+                        {val}
+                      </td>
+                    );
+                  })}
                 </tr>
               ))}
             </tbody>
