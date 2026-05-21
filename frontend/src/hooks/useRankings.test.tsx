@@ -21,7 +21,7 @@ describe('useRankings', () => {
   });
 
   it('writes fetched long rankings into the store', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
+    globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       headers: new Headers({ 'x-data-source': 'pipeline' }),
       json: async () =>
@@ -61,7 +61,7 @@ describe('useRankings', () => {
   });
 
   it('writes fetched short rankings into the store', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
+    globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       headers: new Headers({ 'x-data-source': 'pipeline' }),
       json: async () =>

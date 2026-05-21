@@ -68,7 +68,7 @@ describe('useRankingsAll', () => {
   });
 
   it('writes both long and short rankings into the store atomically', async () => {
-    global.fetch = vi.fn().mockImplementation((url: string) => {
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/long')) {
         return Promise.resolve({
           ok: true,
@@ -104,12 +104,11 @@ describe('useRankingsAll', () => {
 
   it('does not overwrite one direction when the other is still pending', async () => {
     // Simulate long returning before short
-    let shortResolve: () => void;
-    const shortPromise = new Promise<unknown>((resolve) => {
-      shortResolve = resolve as () => void;
+    const shortPromise = new Promise<unknown>(() => {
+      // Never resolves — keeps short query in pending state
     });
 
-    global.fetch = vi.fn().mockImplementation((url: string) => {
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/long')) {
         return Promise.resolve({
           ok: true,
@@ -137,7 +136,7 @@ describe('useRankingsAll', () => {
   });
 
   it('sets source metadata for both directions', async () => {
-    global.fetch = vi.fn().mockImplementation((url: string) => {
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
       const data = url.includes('/long') ? [LONG_RANKING] : [SHORT_RANKING];
       return Promise.resolve({
         ok: true,
@@ -156,7 +155,7 @@ describe('useRankingsAll', () => {
   });
 
   it('returns isLoading true while any query is loading', async () => {
-    global.fetch = vi.fn().mockImplementation((url: string) => {
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/long')) {
         return new Promise(() => {}); // never resolves — long stays loading
       }
@@ -174,7 +173,7 @@ describe('useRankingsAll', () => {
   });
 
   it('returns isError true when any query fails', async () => {
-    global.fetch = vi.fn().mockImplementation((url: string) => {
+    globalThis.fetch = vi.fn().mockImplementation(() => {
       return Promise.resolve({
         ok: false,
         status: 500,

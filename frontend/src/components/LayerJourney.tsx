@@ -539,10 +539,20 @@ function Station({
 
 /* ─── Main component ────────────────────────────────── */
 export function LayerJourney({ entry, ctx, learnMode, activeLayer }: LayerJourneyProps) {
+  // entry may be a basic RankingEntry cast as SymbolFactorBreakdown by callers
+  // that haven't fetched factor data yet (e.g. auto-select on first ranking
+  // load). evaluateLayers crashes on the nested fields, so guard upstream.
+  const hasFactorData =
+    entry != null &&
+    (entry as Partial<SymbolFactorBreakdown>).l2_universe != null &&
+    (entry as Partial<SymbolFactorBreakdown>).l3_signals != null &&
+    (entry as Partial<SymbolFactorBreakdown>).l5_scores != null &&
+    (entry as Partial<SymbolFactorBreakdown>).l8_thesis != null;
+
   const layers = useMemo(() => {
-    if (!entry) return null;
+    if (!entry || !hasFactorData) return null;
     return evaluateLayers(entry, ctx);
-  }, [entry, ctx]);
+  }, [entry, ctx, hasFactorData]);
 
   if (!entry || !layers) {
     return (

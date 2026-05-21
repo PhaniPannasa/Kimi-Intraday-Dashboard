@@ -43,7 +43,6 @@ export function HealthStrip({
     );
   }
 
-  const layersOk = pipeline.filter((l) => l.status === 'ok').length;
   const totalDuration = pipeline.reduce((sum, l) => sum + l.duration_ms, 0);
 
   const dbUp = health?.db_connected === true;

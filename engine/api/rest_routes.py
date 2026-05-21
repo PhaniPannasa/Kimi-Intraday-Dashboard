@@ -588,11 +588,11 @@ async def health(response: Response):
     except Exception:
         last_bar = None
 
-    # Determine Upstox WebSocket state independently of data realness
-    upstox_ws_state = "connected" if (
-        hasattr(pipeline, 'ws_client') and
-        getattr(pipeline.ws_client, 'is_connected', False)
-    ) else "idle"
+    # Upstox feed state — read the module-level singleton. `pipeline.ws_client`
+    # does not exist; `upstox_ws.running` is the actual liveness flag set by
+    # the websocket-client on_open / on_close callbacks (see core/data/upstox_ws.py).
+    from core.data.upstox_ws import upstox_ws
+    upstox_ws_state = "connected" if getattr(upstox_ws, "running", False) else "idle"
 
     return HealthResponse(
         status="healthy",
