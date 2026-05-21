@@ -1345,12 +1345,12 @@ export function LayerInspector({
     }>;
 
     // L1: Show live market context from ctx
-    if (layerKey === 'l1_market_context') {
+    if (layerKey === 'L1') {
       const regimeColor = ctx.regime === 'Trending-Up' ? 'var(--trade-long)' : ctx.regime === 'Trending-Down' ? 'var(--trade-short)' : 'var(--text-secondary)';
       return (
         <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4">
           <div className="mb-2 text-[11px] font-semibold text-[var(--text-secondary)]">
-            {meta?.label ?? 'L1 Market Context'} — Live Data
+            {meta?.name ?? 'L1 Market Context'} — Live Data
           </div>
           <div className="grid grid-cols-2 gap-2">
             {[
@@ -1379,22 +1379,22 @@ export function LayerInspector({
 
     // L2-L10: Layer-specific ranking preview
     const layerCols: Record<string, Array<{h: string; k: string; w: string}>> = {
-      l2_universe: [{h:'Symbol',k:'symbol',w:'left'},{h:'Score',k:'score',w:'right'},{h:'Sector',k:'sector_name',w:'left'},{h:'Dir',k:'direction',w:'right'}],
-      l3_signals: [{h:'Symbol',k:'symbol',w:'left'},{h:'Score',k:'score',w:'right'},{h:'Dir',k:'direction',w:'right'},{h:'R:R',k:'net_rr',w:'right'}],
-      l4_sector: [{h:'Symbol',k:'symbol',w:'left'},{h:'Sector',k:'sector_name',w:'left'},{h:'Score',k:'score',w:'right'},{h:'R:R',k:'net_rr',w:'right'}],
-      l5_scoring: [{h:'Symbol',k:'symbol',w:'left'},{h:'Score',k:'score',w:'right'},{h:'Conf',k:'confluence_score',w:'right'},{h:'R:R',k:'net_rr',w:'right'}],
-      l6_ranking: [{h:'#',k:'#',w:'left'},{h:'Symbol',k:'symbol',w:'left'},{h:'Score',k:'score',w:'right'},{h:'Dir',k:'direction',w:'right'},{h:'Move',k:'rank_movement',w:'right'},{h:'R:R',k:'net_rr',w:'right'}],
-      l7_confluence: [{h:'Symbol',k:'symbol',w:'left'},{h:'Conf',k:'confluence_score',w:'right'},{h:'Score',k:'score',w:'right'},{h:'R:R',k:'net_rr',w:'right'}],
-      l8_thesis: [{h:'Symbol',k:'symbol',w:'left'},{h:'Score',k:'score',w:'right'},{h:'Setup',k:'setup_type',w:'left'},{h:'R:R',k:'net_rr',w:'right'}],
-      l9_monitor: [{h:'Symbol',k:'symbol',w:'left'},{h:'Score',k:'score',w:'right'},{h:'Price',k:'price',w:'right'},{h:'Chg%',k:'change_pct',w:'right'}],
-      l10_edge: [{h:'Symbol',k:'symbol',w:'left'},{h:'Score',k:'score',w:'right'},{h:'Tier',k:'edge_tier',w:'right'},{h:'R:R',k:'net_rr',w:'right'}],
+      L2: [{h:'Symbol',k:'symbol',w:'left'},{h:'Score',k:'score',w:'right'},{h:'Sector',k:'sector_name',w:'left'},{h:'Dir',k:'direction',w:'right'}],
+      L3: [{h:'Symbol',k:'symbol',w:'left'},{h:'Score',k:'score',w:'right'},{h:'Dir',k:'direction',w:'right'},{h:'R:R',k:'net_rr',w:'right'}],
+      L4: [{h:'Symbol',k:'symbol',w:'left'},{h:'Sector',k:'sector_name',w:'left'},{h:'Score',k:'score',w:'right'},{h:'R:R',k:'net_rr',w:'right'}],
+      L5: [{h:'Symbol',k:'symbol',w:'left'},{h:'Score',k:'score',w:'right'},{h:'Conf',k:'confluence_score',w:'right'},{h:'R:R',k:'net_rr',w:'right'}],
+      L6: [{h:'#',k:'#',w:'left'},{h:'Symbol',k:'symbol',w:'left'},{h:'Score',k:'score',w:'right'},{h:'Dir',k:'direction',w:'right'},{h:'Move',k:'rank_movement',w:'right'},{h:'R:R',k:'net_rr',w:'right'}],
+      L7: [{h:'Symbol',k:'symbol',w:'left'},{h:'Conf',k:'confluence_score',w:'right'},{h:'Score',k:'score',w:'right'},{h:'R:R',k:'net_rr',w:'right'}],
+      L8: [{h:'Symbol',k:'symbol',w:'left'},{h:'Score',k:'score',w:'right'},{h:'Setup',k:'setup_type',w:'left'},{h:'R:R',k:'net_rr',w:'right'}],
+      L9: [{h:'Symbol',k:'symbol',w:'left'},{h:'Score',k:'score',w:'right'},{h:'Price',k:'price',w:'right'},{h:'Chg%',k:'change_pct',w:'right'}],
+      L10: [{h:'Symbol',k:'symbol',w:'left'},{h:'Score',k:'score',w:'right'},{h:'Tier',k:'edge_tier',w:'right'},{h:'R:R',k:'net_rr',w:'right'}],
     };
     const cols = layerCols[layerKey] ?? [{h:'Symbol',k:'symbol',w:'left'},{h:'Score',k:'score',w:'right'},{h:'Dir',k:'direction',w:'right'},{h:'R:R',k:'net_rr',w:'right'}];
 
     return (
       <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-3">
         <div className="mb-2 text-[11px] font-semibold text-[var(--text-secondary)]">
-          {meta?.label ?? layerKey} — Ranking Data
+          {meta?.name ?? layerKey} — Ranking Data
         </div>
         <div className="mb-2 text-[9px] text-[var(--text-tertiary)]">
           {stockList.length} entries · Factor breakdown not yet available for this layer
