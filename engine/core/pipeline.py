@@ -593,6 +593,10 @@ class PipelineOrchestrator:
         self._sector_rs_real: bool = False
         self._bars_persisted: bool = False
 
+        # In-memory factors cache: scored entries from last cycle so the
+        # /rankings/{symbol}/factors endpoint can serve real data without Redis.
+        self._latest_scored: list[dict] = []
+
     # ------------------------------------------------------------------
     # Entry point
     # ------------------------------------------------------------------
@@ -931,6 +935,7 @@ class PipelineOrchestrator:
             shorts = [r for r in rankings if r.direction == Direction.SHORT]
             self.latest_long_rankings = longs
             self.latest_short_rankings = shorts
+            self._latest_scored = scored
             logger.info(
                 "[Pipeline] L6 rankings: long=%d short=%d",
                 len(longs), len(shorts),

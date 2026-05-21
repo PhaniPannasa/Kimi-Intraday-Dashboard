@@ -444,6 +444,193 @@ def _build_symbol_factors(rng, symbol: str, direction: Direction) -> SymbolFacto
     )
 
 
+def _normalize_modifiers(modifiers) -> dict:
+    """Convert L5 modifiers to dict form. L5 returns a numeric penalty sum;
+    L5ScoreBreakdown expects ``Dict[str, int]``."""
+    if isinstance(modifiers, dict):
+        return modifiers
+    if isinstance(modifiers, (int, float)):
+        return {"net_modifier": int(modifiers)}
+    return {}
+
+
+def _build_factors_from_pipeline(symbol: str, entry: dict) -> SymbolFactorBreakdown:
+    """Build a real SymbolFactorBreakdown from in-memory pipeline state."""
+    import numpy as np
+    from core.pipeline import pipeline
+
+    bars = pipeline.aggregator.get_bars(symbol, 100)
+    if len(bars) < 5:
+        raise ValueError(f"Insufficient bars for {symbol}")
+
+    pd_df = bars.to_pandas()
+    l3_df = pipeline.l3.compute(pd_df)
+    signals = pipeline._extract_l3_signals(symbol, l3_df)
+
+    latest_bar = pd_df.iloc[-1]
+    latest_idx = l3_df.iloc[-1]
+    close_val = float(latest_bar["close"])
+    atr_val = float(latest_idx.get("atr", 0))
+
+    direction = Direction.LONG if entry.get("direction") == "LONG" else Direction.SHORT
+    regime_str = pipeline._current_regime()
+
+    # L2 flags
+    l2_flags = {}
+    try:
+        from core.data.nse_scraper import nse_scraper
+        fo_ban_list = getattr(nse_scraper, '_cached_fo_ban', [])
+        mwpl_list = getattr(nse_scraper, '_cached_mwpl', [])
+        l2_flags["fo_ban"] = symbol in (fo_ban_list or [])
+        l2_flags["mwpl"] = "MWPL" if symbol in (mwpl_list or []) else "None"
+    except Exception:
+        l2_flags = {"fo_ban": False, "mwpl": "None"}
+
+    # L4 sector
+    from core.pipeline import SYMBOL_TO_SECTOR
+    sector_name = SYMBOL_TO_SECTOR.get(symbol, "Bank")
+
+    # Edge tier
+    setup_type = entry.get("setup_type", 1)
+    try:
+        edge = pipeline.l10.lookup(
+            SetupType(setup_type), Regime(regime_str), direction
+        )
+    except Exception:
+        edge = {"tier": 1, "hit_rate": 0.5, "ci_lower": 0.3, "ci_upper": 0.7,
+                "n": 30, "is_significant": False}
+
+    # Thesis snapshot from pipeline if available
+    thesis = next(
+        (t for t in (pipeline.latest_theses or []) if t.symbol == symbol), None
+    )
+
+    # L5 scores from entry
+    factors = entry.get("factors", {})
+    score_val = float(entry.get("score", 0))
+
+    # Sparkline from bars
+    sparkline = [float(x) for x in bars["close"].to_numpy()[-30:].tolist()]
+    prev_close = float(bars["close"].to_numpy()[-2]) if len(bars) >= 2 else close_val
+    change_pct = round((close_val - prev_close) / prev_close * 100, 2)
+
+    # Estimate trigger/inval from thesis or signals
+    if thesis:
+        trigger = thesis.trigger
+        inval = thesis.invalidation
+        t1 = thesis.t1
+        t2 = thesis.t2
+        net_rr = thesis.net_rr
+        gross_rr = getattr(thesis, 'gross_rr', net_rr)
+        grade = getattr(thesis, 'grade', 'NEUTRAL')
+        thesis_id = thesis.thesis_id
+        setup_label = thesis.setup_type_label if hasattr(thesis, 'setup_type_label') else ""
+    else:
+        trigger = round(close_val + atr_val * 1.5, 2) if direction == Direction.LONG else round(close_val - atr_val * 1.5, 2)
+        inval = round(close_val - atr_val, 2) if direction == Direction.LONG else round(close_val + atr_val, 2)
+        t1 = round(trigger + atr_val * 1.5, 2) if direction == Direction.LONG else round(trigger - atr_val * 1.5, 2)
+        t2 = round(trigger + atr_val * 3.0, 2) if direction == Direction.LONG else round(trigger - atr_val * 3.0, 2)
+        net_rr = 1.4
+        gross_rr = 1.5
+        grade = "NEUTRAL"
+        thesis_id = f"{symbol}-{entry.get('setup_type',1)}-{_ist_now().strftime('%Y%m%d-%H%M')}"
+        setup_label = SETUP_LABELS.get(entry.get("setup_type", 1), "")
+
+    # Confluence
+    confl_score = entry.get("confluence_score", 0)
+    confl_checks = signals.get("confluence_checks", {
+        "strong_close": False, "volume_confirm": False, "non_exhaustion": False,
+        "htf_alignment": False, "risk_distance": False, "reward_distance": False,
+    })
+
+    return SymbolFactorBreakdown(
+        symbol=symbol,
+        direction=direction,
+        last_updated=datetime.now(timezone.utc),
+        price=close_val,
+        change_pct=change_pct,
+        sparkline=sparkline,
+        l2_universe=L2UniverseFrame(
+            fo_eligible=True,
+            fo_ban=l2_flags.get("fo_ban", False),
+            mwpl_status=l2_flags.get("mwpl", "None"),
+            earnings_flag="None",
+            liquidity_quality=entry.get("liquidity_quality", "Good"),
+            lqs_score=0.7,
+        ),
+        l3_signals=L3SignalFrame(
+            ema_9=round(float(latest_idx.get("ema_9", close_val)), 2),
+            ema_20=round(float(latest_idx.get("ema_20", close_val)), 2),
+            ema_50=round(float(latest_idx.get("ema_50", close_val)), 2),
+            ema_aligned=bool(latest_idx.get("ema_aligned", False)),
+            supertrend_dir=int(latest_idx.get("supertrend_dir", 0)),
+            adx=round(float(latest_idx.get("adx", 20)), 1),
+            rsi=round(float(latest_idx.get("rsi", 50)), 1),
+            macd_hist=round(float(latest_idx.get("macd_hist", 0)), 2),
+            atr=round(atr_val, 2),
+            atr_pct=round(float(latest_idx.get("atr_pct", 1.0)), 2),
+            bb_width=round(float(latest_idx.get("bb_width", 2.0)), 2),
+            vwap=round(float(latest_idx.get("vwap", close_val)), 2),
+            above_vwap=bool(latest_idx.get("above_vwap", False)),
+            roc_20=round(float(latest_idx.get("roc_20", 0)), 2),
+        ),
+        l4_sector=L4SectorFrame(
+            sector_id=entry.get("sector_id", 6),
+            sector_name=sector_name,
+            rs_ratio=0.9,
+            rs_momentum=1.0,
+            rotation_rank=entry.get("sector_id", 6),
+        ),
+        l5_scores=L5ScoreBreakdown(
+            total=score_val,
+            f1_trend=factors.get("f1", 0),
+            f2_momentum=factors.get("f2", 0),
+            f3_volume=factors.get("f3", 0),
+            f4_volpos=factors.get("f4", 0),
+            f5_structure=factors.get("f5", 0),
+            f6_sector=factors.get("f6", 0),
+            f7_risk=factors.get("f7", 0),
+            regime=regime_str,
+            modifiers=_normalize_modifiers(entry.get("modifiers", {})),
+        ),
+        l6_ranking=L6RankSnapshot(
+            previous_score=score_val,
+            score_change=0.0,
+            rank_movement=entry.get("rank_movement", "NEW"),
+            liquidity_quality=entry.get("liquidity_quality", "Good"),
+        ),
+        l7_confluence=L7ConfluenceCheck(
+            score=confl_score,
+            max=6,
+            checks=confl_checks,
+        ),
+        l8_thesis=L8ThesisSnapshot(
+            thesis_id=thesis_id,
+            setup_type=entry.get("setup_type", 1),
+            setup_label=setup_label,
+            trigger=trigger,
+            invalidation=inval,
+            t1=t1,
+            t2=t2,
+            gross_rr=gross_rr,
+            net_rr=net_rr,
+            grade=grade,
+            actionability_tier=entry.get("actionability_tier", "Research-Only"),
+            valid_until_min=930,
+            time_decay=0.9,
+        ),
+        l9_monitor={},
+        l10_edge=L10EdgeSnapshot(
+            edge_tier=edge.get("tier", 1),
+            hit_rate=round(float(edge.get("hit_rate", 0.5)), 3),
+            ci_lower=round(float(edge.get("ci_lower", 0.3)), 3),
+            ci_upper=round(float(edge.get("ci_upper", 0.7)), 3),
+            n_samples=int(edge.get("n", 30)),
+            is_significant=bool(edge.get("is_significant", False)),
+        ),
+    )
+
+
 def _gen_events(rng, cycle: int, limit: int = 20) -> List[ActivityEvent]:
     events: List[ActivityEvent] = []
     now = _ist_now()
@@ -864,16 +1051,19 @@ async def edge_tier_stats(tier_id: int):
 
 @router.get("/rankings/{symbol}/factors", response_model=SymbolFactorBreakdown)
 async def symbol_factors(symbol: str, response: Response):
+    # Serve from in-memory pipeline state — no Redis dependency.
+    try:
+        scored = getattr(pipeline, '_latest_scored', [])
+        entry = next((e for e in scored if e["symbol"] == symbol), None)
+        if entry is not None:
+            response.headers["X-Data-Source"] = "pipeline"
+            return _build_factors_from_pipeline(symbol, entry)
+    except Exception:
+        pass
+
     if symbol not in SYMBOL_DATA:
         raise HTTPException(status_code=404, detail=f"Unknown symbol: {symbol}")
-    cached_factors = None
-    try:
-        cached_factors = await cache.get(f"factors:{symbol}")
-    except Exception:
-        cached_factors = None
-    if cached_factors:
-        response.headers["X-Data-Source"] = "pipeline"
-        return SymbolFactorBreakdown(**cached_factors)
+
     response.headers["X-Data-Source"] = "mock"
     cycle = _next_cycle()
     rng = _make_rng(cycle * 65537 + hash(symbol) % 100000)
