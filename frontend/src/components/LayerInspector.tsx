@@ -36,8 +36,21 @@ function avg(arr: number[]): number {
   return arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
 }
 
-function useAllStocks(stocks: SymbolFactorBreakdown[]): SymbolFactorBreakdown[] {
-  return stocks;
+function hasFactorData(stocks: any[]): boolean {
+  return stocks.length > 0 && stocks.some(
+    (s) => s != null && s.l2_universe != null && s.l3_signals != null && s.l5_scores != null
+  );
+}
+
+function useAllStocks(stocks: any[]): any[] {
+  // Filter to only stocks that have factor data (guard against RankingEntry[] input)
+  const valid = stocks.filter(
+    (s) => s != null && s.l2_universe != null && s.l3_signals != null && s.l5_scores != null
+  );
+  // If no valid stocks, return the full array anyway — sub-views may still render
+  // partial data from any accessible fields, but the guard in LayerInspector
+  // (see below) handles the case where stocks have no factor data at all
+  return valid.length > 0 ? valid : stocks;
 }
 
 const LAYER_ORDER = ['L1', 'L2', 'L3', 'L4', 'L5', 'L6', 'L7', 'L8', 'L9', 'L10'];
@@ -1321,6 +1334,24 @@ export function LayerInspector({
   const meta = LAYER_META[layerKey];
   const ViewComponent = LAYER_VIEWS[layerKey];
 
+  // Guard: if stocks are RankingEntry[] (no factor data), show empty state
+  // instead of crashing. Same pattern as LayerJourney.tsx:545-554.
+  if (!ViewComponent || !hasFactorData(stocks)) {
+    return (
+      <div className="flex min-h-[300px] flex-col items-center justify-center rounded-lg border border-dashed border-[var(--border-subtle)] bg-[var(--bg-surface)] p-6">
+        <div className="text-center">
+          <div className="text-sm font-medium text-[var(--text-secondary)]">
+            No factor data available
+          </div>
+          <div className="mt-1 max-w-xs text-[11px] text-[var(--text-tertiary)]">
+            Factor breakdown data is loaded per-symbol from the API.
+            Select a stock from Top 25 rankings to see its full layer-by-layer audit trail.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const goPrev = () => {
     const prev = LAYER_ORDER[Math.max(0, curIdx - 1)];
     if (prev !== layerKey) onSwitchLayer(prev);
@@ -1377,13 +1408,7 @@ export function LayerInspector({
 
       {/* Body */}
       <div className="overflow-y-auto p-3" style={{ maxHeight: '70vh' }}>
-        {ViewComponent ? (
-          <ViewComponent stocks={stocks} ctx={ctx} />
-        ) : (
-          <div className="flex h-32 items-center justify-center text-[11px] text-[var(--text-tertiary)]">
-            No inspector view available for {layerKey}
-          </div>
-        )}
+        <ViewComponent stocks={stocks} ctx={ctx} />
       </div>
     </div>
   );
