@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { useMarketStore } from '@/stores/marketStore';
 import { useMarketContext } from '@/hooks/useMarketContext';
-import { useRankings } from '@/hooks/useRankings';
+import { useRankingsAll } from '@/hooks/useRankingsAll';
 import { useFunnelCounts } from '@/hooks/useFunnelCounts';
 import { useActiveTheses } from '@/hooks/useActiveTheses';
 import { useEdgeTiers } from '@/hooks/useEdgeTiers';
@@ -29,8 +29,7 @@ import type { RankingEntry } from '@/types/api';
 export default function App() {
   useWebSocket();
   useMarketContext();
-  useRankings('long');
-  useRankings('short');
+  useRankingsAll();
   const { data: pipelineStatus } = usePipelineStatus();
   const { data: funnel } = useFunnelCounts();
   useActiveTheses();
