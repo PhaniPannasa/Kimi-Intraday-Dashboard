@@ -156,21 +156,18 @@ The frontend WebSocket uses the relative path `/ws/v1/stream`
 (`frontend/src/hooks/useWebSocket.ts:5`); Vite's `/ws` proxy forwards it to
 `ws://localhost:8172`.
 
-**WebSocket limitation:** Cloudflare tunnels do not proxy WebSocket traffic by default.
-The frontend `useWebSocket` hook connects to `/ws/v1/stream`, which works locally
-(`ws://localhost:8172/ws/v1/stream` returns `101 Switching Protocols`) but fails
-through the public tunnel (`wss://kimi.intraday-edge-4zz.uk/ws/v1/stream`).
+**WebSocket through the tunnel works.** Cloudflare's `cloudflared` HTTP service
+automatically upgrades WebSocket frames — no special config needed. Verified by
+direct handshake to `wss://kimi.intraday-edge-4zz.uk/ws/v1/stream`: returns the
+expected `SUBSCRIBED` payload from `engine/api/websocket_manager.py`.
 
-When WS fails, the dashboard falls back to REST polling (60s for rankings, 300s for context,
-etc.). This is why MOCK badges persist — the REST endpoints return mock data when the
-pipeline has no real rankings, and without WS there is no push of real L1/L6/L8/L10 events.
-
-**To enable WS through the tunnel** (requires Cloudflare Zero Trust dashboard access):
-1. In Cloudflare dashboard → Networks → Tunnels → `intraday-edge`
-2. Add an additional public hostname: `kimi.intraday-edge-4zz.uk/ws/*`
-3. Set service type to `HTTP` → `localhost:8172`
-4. Under Additional application settings → HTTP → enable `No TLS Verify` if using self-signed certs
-5. Under Connectivity → enable WebSocket support
+If you see `WebSocket is closed before the connection is established` in the
+browser console, that is **React StrictMode dev-mode double-mount**, not a
+tunnel issue. StrictMode runs every `useEffect` twice in development — the first
+mount opens the WS and the cleanup closes it before the handshake completes,
+then the second mount opens a new one that succeeds. Production builds (vite
+build) do not have this. See `frontend/src/hooks/useWebSocket.ts:18` for the
+effect that gets double-invoked.
 
 ## Architecture
 
@@ -197,6 +194,26 @@ invalidation, T1, T2) with full Indian-cost-aware net R:R.
 The pipeline runs every minute under APScheduler; `engine/core/scheduler/`
 holds the cron triggers and the NSE holiday calendar.
 
+**Phase dispatch in `pipeline.run_cycle()`:** the orchestrator routes each tick
+based on `session.current_phase()`:
+
+| Phase | Handler | Notes |
+|---|---|---|
+| `pre-market` | `_run_pre_market_cycle()` | One-shot historical-candle backfill at startup (gated by `_pre_market_done`). Currently a no-op because the Analytics token cannot reach `/historical-candle/*` — see token-scope note above. |
+| `live` | `_run_live_cycle()` | Full L1→L10 scoring loop. Runs every minute 09:15–15:30 IST. |
+| `closing` | `_run_closing_cycle()` | Final cycle near 15:30; persists L9 outcomes and edge stats. |
+| `closed` + `_cycle_number == 0` | bootstrap (`_run_pre_market_cycle` then `_run_live_cycle`) | One-shot bootstrap when the engine starts after 15:30, so the dashboard has at least one real cycle's data instead of sitting on `cycle_number=0` and forcing every endpoint into mock fallback. Will be a no-op until the historical-candle scope is unblocked. |
+| `closed` (other) | no-op | Subsequent calls during closed hours do nothing. |
+
+**Truthful MOCK fallback.** Every REST endpoint emits an `X-Data-Source` header
+of either `pipeline` or `mock`, computed by the predicates in
+`engine/core/telemetry.py`. When the pipeline has not produced real data (e.g.
+post-market with `_cycle_number = 0`), endpoints return seeded mock data and
+the header reports `mock`; the frontend `MockBadge` component reflects this
+honestly. **MOCK badges everywhere are not a bug** — they are the truthful
+indication that the pipeline has no real data yet. They will disappear naturally
+once live cycles run (09:15 IST or once historical-candle access exists).
+
 ### API-Contract-First pattern
 
 REST + WebSocket schemas (`models/frames.py` + `api/rest_routes.py` +
@@ -220,6 +237,15 @@ against the real contracts.
   **Analytics Token** (1-year validity, no daily OAuth login).
   `engine/core/data/upstox_rest.py` and `upstox_ws.py`. WebSocket runs two
   connections: 100 stocks in Full mode + ~20 indices in LTPC.
+- **Analytics token scope limitation (read-only).** The Analytics token can hit
+  the *live* market-data endpoints (`/v2/market-quote/ltp`, `/v3/feed/market-data-feed`)
+  but **cannot access historical-candle endpoints** — `/v2/historical-candle/...`
+  and `/v3/historical-candle/...` both return `400 UDAPI100011 "Invalid Instrument key"`
+  (a misleading error meaning the token lacks the marketdata scope, not that the key
+  is malformed). Consequence: the pre-market backfill and closed-phase bootstrap in
+  `engine/core/pipeline.py` cannot reconstruct yesterday's bars; live cycles only
+  populate data from 09:15 IST onward when the WS tick feed starts flowing. A
+  broader-scope OAuth token (Phase 2) is needed to backfill historical bars.
 - **TimescaleDB** (PostgreSQL 15 + Timescale extension) holds hypertables for
   `market_bars`, `thesis_outcomes`, and a continuous aggregate
   `edge_stats_daily`. Migrations are plain SQL in `engine/db/migrations/`.
@@ -241,7 +267,7 @@ against the real contracts.
 ### Quick health check
 ```powershell
 # Check backend health
-curl http://localhost:8170/health
+curl http://localhost:8172/health
 
 # Check frontend builds
 cd frontend && npm run build
@@ -257,7 +283,7 @@ pytest tests/test_pipeline.py -v
 ```powershell
 # Terminal 1: Backend (requires .env with Upstox token)
 cd engine
-uvicorn main:app --host 0.0.0.0 --port 8170 --reload
+uvicorn main:app --host 0.0.0.0 --port 8172 --reload
 
 # Terminal 2: Frontend
 cd frontend
@@ -328,7 +354,7 @@ encode constants, thresholds, and the "why" that the code does not.
 
 **Docker & DevOps**
 - ✅ docker-compose.yml with 4 services (engine, timescaledb, redis, caddy)
-- ✅ Port mappings: 8170 (engine), 8150 (DB), 8160 (redis), 8190 (Vite dev), 8180 (web)
+- ✅ Port mappings: 8172 (engine), 8150 (DB), 8160 (redis), 8190 (Vite dev), 8180 (web)
 - ✅ .env.example template with required credentials
 
 ### ⚠️ Phase 1 Constraints (Honored)
