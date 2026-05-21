@@ -24,6 +24,7 @@ from core.data.redis_cache import cache
 from core.data.upstox_rest import upstox_rest
 from core.data.nse_scraper import nse_scraper
 from core.session.market_session import session as market_session
+from db.timescale import db as timescale_db
 from layers.l1_market_context import L1MarketContext
 from layers.l3_signals import L3Signals, ema_aligned, detect_macd_divergence
 from layers.l4_sector import rank_sectors
@@ -590,6 +591,7 @@ class PipelineOrchestrator:
         # Telemetry realness tracking (updated each cycle)
         self._l2_flags_populated: bool = False
         self._sector_rs_real: bool = False
+        self._bars_persisted: bool = False
 
     # ------------------------------------------------------------------
     # Entry point
@@ -1128,6 +1130,49 @@ class PipelineOrchestrator:
         except Exception:
             pass  # Redis writes are non-critical cache augmentations
 
+        # Persist closed bars to TimescaleDB so /market/candles has real data
+        try:
+            await self._persist_bars()
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
+    # Persistence
+    # ------------------------------------------------------------------
+
+    async def _persist_bars(self):
+        """Write closed bars from the aggregator into TimescaleDB ``market_bars``.
+
+        Uses ON CONFLICT DO NOTHING so re-persisting the same bars across
+        cycles is harmless.  Sets ``_bars_persisted`` on first success so
+        the telemetry predicate flips to ``pipeline``.
+        """
+        if timescale_db.pool is None:
+            return
+        inserted = 0
+        errors = 0
+        for sym, inst_key in self.symbol_map.items():
+            bars = self.aggregator.get_bars(sym, n=5)
+            if len(bars) == 0:
+                continue
+            for bar in bars.iter_rows(named=True):
+                try:
+                    await timescale_db.execute(
+                        "INSERT INTO market_bars "
+                        "(time, instrument_key, open, high, low, close, volume, oi) "
+                        "VALUES ($1, $2, $3, $4, $5, $6, $7, $8) "
+                        "ON CONFLICT DO NOTHING",
+                        bar["ts"], inst_key,
+                        float(bar["open"]), float(bar["high"]),
+                        float(bar["low"]), float(bar["close"]),
+                        int(bar["volume"]), int(bar.get("oi", 0)),
+                    )
+                    inserted += 1
+                except Exception:
+                    errors += 1
+        if inserted > 0:
+            self._bars_persisted = True
+
     # ------------------------------------------------------------------
     # Phase: closing  (force-expire + snapshot)
     # ------------------------------------------------------------------
@@ -1180,7 +1225,7 @@ class PipelineOrchestrator:
         rows = []
         for c in candles:
             rows.append({
-                "ts": c[0],
+                "ts": datetime.fromisoformat(c[0]),
                 "open": c[1],
                 "high": c[2],
                 "low": c[3],

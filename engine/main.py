@@ -8,6 +8,7 @@ from api.websocket_manager import router as ws_router
 from core.scheduler.market_scheduler import scheduler
 from core.pipeline import pipeline
 from core.data.upstox_ws import upstox_ws
+from db.timescale import db as timescale_db
 
 
 async def _consume_ws():
@@ -32,6 +33,14 @@ async def lifespan(app: FastAPI):
         print(f"Upstox WS connected, subscribed to {len(all_keys)} symbols")
     except Exception as e:
         print(f"Upstox WS connection deferred: {e}")
+
+    # Connect to TimescaleDB
+    try:
+        await timescale_db.connect()
+        await timescale_db.run_migrations()
+        print("TimescaleDB connected and migrated")
+    except Exception as e:
+        print(f"TimescaleDB connection deferred: {e}")
 
     scheduler.register_job(
         "pipeline_cycle",

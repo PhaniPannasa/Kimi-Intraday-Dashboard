@@ -32,7 +32,7 @@ _ENDPOINT_PREDICATES: dict[str, str] = {
     "/activity/events":
         "bool(p.latest_long_rankings or p.latest_short_rankings)",
     "/market/candles/{symbol}":
-        "False",  # depends on TimescaleDB — not available when DB offline
+        "getattr(p, '_bars_persisted', False)",
     "/health":
         "p._cycle_number > 0",
 }

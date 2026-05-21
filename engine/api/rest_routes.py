@@ -1057,9 +1057,9 @@ async def market_candles(
     rows: List[dict] = []
     try:
         rows = await timescale_db.fetch(
-            "SELECT ts, open, high, low, close, volume FROM market_bars "
-            "WHERE instrument_key = $1 AND timeframe = $2 ORDER BY ts DESC LIMIT $3",
-            instrument_key, interval, limit,
+            "SELECT time, open, high, low, close, volume FROM market_bars "
+            "WHERE instrument_key = $1 ORDER BY time DESC LIMIT $2",
+            instrument_key, limit,
         )
     except Exception:
         # DB unreachable / pool not initialized / query error — fall
