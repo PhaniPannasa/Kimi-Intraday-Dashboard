@@ -23,7 +23,7 @@ from api.websocket_manager import manager as ws_manager
 from core.data.redis_cache import cache
 from core.data.upstox_rest import upstox_rest
 from core.data.nse_scraper import nse_scraper
-from core.session.market_session import session as market_session
+from core.session.market_session import session as market_session, IST
 from db.timescale import db as timescale_db
 from layers.l1_market_context import L1MarketContext
 from layers.l3_signals import L3Signals, ema_aligned, detect_macd_divergence
@@ -913,9 +913,11 @@ class PipelineOrchestrator:
                 nifty_df, vix_value, stock_data,
                 event_flag=event_flag,
                 bank_nifty_divergence=bank_nifty_divergence,
+                phase=self.session.current_phase(),
+                data_as_of=now.astimezone(IST),
             )
         else:
-            context = MarketContextFrame(vix_value=vix_value)
+            context = MarketContextFrame(vix_value=vix_value, data_as_of=now.astimezone(IST))
         self.latest_context = context
         logger.info(
             "[Pipeline] L1 context: regime=%s vix=%.2f breadth=%s bucket=%s",
@@ -1222,8 +1224,12 @@ class PipelineOrchestrator:
                 {"open": [], "high": [], "low": [], "close": [], "volume": []},
             )
 
+        # Upstox returns candles newest-first; reverse to chronological so
+        # that ``get_latest_bars(n)`` (which does ``[-n:]``) returns the
+        # most recent bars rather than the oldest.  Keep the most recent
+        # ~2 trading days (750 bars/day at 1-min).
         rows = []
-        for c in candles:
+        for c in reversed(candles[:750]):
             rows.append({
                 "ts": datetime.fromisoformat(c[0]),
                 "open": c[1],

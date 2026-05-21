@@ -26,8 +26,9 @@ export interface MarketContextFrame {
   time_bucket: string;
   event_flag: string | null;
   breadth: Breadth;
-  premarket_bias: string;
+  premarket_bias: string | null;
   bank_nifty_divergence: number;
+  data_as_of: string | null;
 }
 
 export interface RankingEntry {

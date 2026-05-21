@@ -25,6 +25,7 @@ describe('marketStore', () => {
       premarket_bias: 'Positive',
       bank_nifty_divergence: 0,
       vix_value: 15.5,
+      data_as_of: null,
     };
     useMarketStore.getState().setContext(ctx);
     expect(useMarketStore.getState().context).toEqual(ctx);

@@ -25,8 +25,9 @@ class MarketContextFrame(BaseModel):
     event_flag: Optional[str] = None
     breadth: Breadth = Breadth.MIXED
     vix_value: float = 0.0
-    premarket_bias: str = "Neutral"
+    premarket_bias: Optional[str] = None
     bank_nifty_divergence: float = 0.0
+    data_as_of: Optional[datetime] = None
 
 
 class RankingEntry(BaseModel):

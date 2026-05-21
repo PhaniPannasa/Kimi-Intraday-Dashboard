@@ -113,7 +113,7 @@ export function RegimeBanner() {
             Pre-market
           </span>
           <span className={cn('rounded px-1.5 py-0.5 text-[10px] font-semibold', biasChipClass)}>
-            {ctx.premarket_bias}
+            {ctx.premarket_bias ?? 'N/A'}
           </span>
         </div>
       </div>
@@ -174,6 +174,24 @@ export function RegimeBanner() {
         </span>
         <span className="text-sm font-semibold">{ctx.time_bucket}</span>
       </div>
+
+      {/* Data as-of timestamp */}
+      {ctx.data_as_of && (
+        <div className="hidden flex-col items-end leading-tight md:flex">
+          <span className="text-[10px] uppercase tracking-wide text-[var(--text-tertiary)]">
+            As of
+          </span>
+          <span className="text-[11px] tabular-nums text-[var(--text-tertiary)]">
+            {new Date(ctx.data_as_of).toLocaleString('en-IN', {
+              day: '2-digit',
+              month: 'short',
+              hour: '2-digit',
+              minute: '2-digit',
+              timeZone: 'Asia/Kolkata',
+            })}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

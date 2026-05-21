@@ -130,7 +130,13 @@ def classify_vix_trajectory(vix_history: list[float], window: int = 5) -> str:
     return "Stable"
 
 
-def get_time_bucket(current_time: time) -> str:
+def get_time_bucket(current_time: time, phase: str | None = None) -> str:
+    if phase == "closed":
+        return "Closed"
+    if phase == "pre-market":
+        return "Pre-Open"
+    if phase == "closing":
+        return "Closing Hour"
     if current_time < time(9, 15):
         return "Pre-Open"
     elif current_time < time(9, 30):
@@ -202,10 +208,12 @@ class L1MarketContext:
 
     def compute(self, nifty_df: pl.DataFrame, vix_value: float,
                 stock_data: dict, df_15m: pl.DataFrame | None = None,
-                premarket_bias: str = "Neutral",
+                premarket_bias: str | None = None,
                 bank_nifty_divergence: float = 0.0,
                 event_flag: str | None = None,
-                current_time: time | None = None) -> MarketContextFrame:
+                current_time: time | None = None,
+                phase: str | None = None,
+                data_as_of: datetime | None = None) -> MarketContextFrame:
         self.vix_history.append(vix_value)
         if len(self.vix_history) > 90:
             self.vix_history = self.vix_history[-90:]
@@ -231,9 +239,10 @@ class L1MarketContext:
             vix_band=vix_band.value,
             vix_value=vix_value,
             vix_trajectory=classify_vix_trajectory(self.vix_history),
-            time_bucket=get_time_bucket(now),
+            time_bucket=get_time_bucket(now, phase),
             event_flag=event_flag,
             breadth=breadth.value,
             premarket_bias=premarket_bias,
             bank_nifty_divergence=bank_nifty_divergence,
+            data_as_of=data_as_of,
         )

@@ -42,6 +42,7 @@ describe('useMarketContext', () => {
       breadth: 'Strong',
       premarket_bias: 'Positive',
       bank_nifty_divergence: 0,
+      data_as_of: null,
     };
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
       ok: true,
