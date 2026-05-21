@@ -16,9 +16,21 @@ class UpstoxRESTClient:
         )
 
     async def get_historical_candle(
-        self, instrument_key: str, interval: str = "1minute"
+        self,
+        instrument_key: str,
+        interval: str = "1minute",
+        date: str | None = None,
     ):
-        url = f"/v2/historical-candle/intraday/{instrument_key}/{interval}"
+        """Fetch historical candles from Upstox v2.
+
+        ``date`` must be ``YYYY-MM-DD`` in IST. Defaults to yesterday
+        (the latest completed trading day with full intraday data).
+        """
+        if date is None:
+            from datetime import datetime as dt_utc, timedelta, timezone
+            ist = timezone(timedelta(hours=5, minutes=30))
+            date = (dt_utc.now(ist) - timedelta(days=1)).strftime("%Y-%m-%d")
+        url = f"/v2/historical-candle/{instrument_key}/{interval}/{date}"
         response = await self.client.get(url)
         response.raise_for_status()
         return response.json()
