@@ -199,10 +199,10 @@ based on `session.current_phase()`:
 
 | Phase | Handler | Notes |
 |---|---|---|
-| `pre-market` | `_run_pre_market_cycle()` | One-shot historical-candle backfill at startup (gated by `_pre_market_done`). Currently a no-op because the Analytics token cannot reach `/historical-candle/*` — see token-scope note above. |
+| `pre-market` | `_run_pre_market_cycle()` | One-shot historical-candle backfill at startup (gated by `_pre_market_done`). Fetches yesterday's 1-min bars for all 105 symbols via `GET /v2/historical-candle/{key}/{interval}/{date}` and pre-loads them into TickBuffer. |
 | `live` | `_run_live_cycle()` | Full L1→L10 scoring loop. Runs every minute 09:15–15:30 IST. |
 | `closing` | `_run_closing_cycle()` | Final cycle near 15:30; persists L9 outcomes and edge stats. |
-| `closed` + `_cycle_number == 0` | bootstrap (`_run_pre_market_cycle` then `_run_live_cycle`) | One-shot bootstrap when the engine starts after 15:30, so the dashboard has at least one real cycle's data instead of sitting on `cycle_number=0` and forcing every endpoint into mock fallback. Will be a no-op until the historical-candle scope is unblocked. |
+| `closed` + `_cycle_number == 0` | bootstrap (`_run_pre_market_cycle` then `_run_live_cycle`) | One-shot bootstrap when the engine starts after 15:30, so the dashboard has at least one real cycle's data instead of sitting on `cycle_number=0` and forcing every endpoint into mock fallback. |
 | `closed` (other) | no-op | Subsequent calls during closed hours do nothing. |
 
 **Truthful MOCK fallback.** Every REST endpoint emits an `X-Data-Source` header
@@ -212,7 +212,7 @@ post-market with `_cycle_number = 0`), endpoints return seeded mock data and
 the header reports `mock`; the frontend `MockBadge` component reflects this
 honestly. **MOCK badges everywhere are not a bug** — they are the truthful
 indication that the pipeline has no real data yet. They will disappear naturally
-once live cycles run (09:15 IST or once historical-candle access exists).
+once live cycles run at 09:15 IST.
 
 ### API-Contract-First pattern
 
@@ -237,15 +237,18 @@ against the real contracts.
   **Analytics Token** (1-year validity, no daily OAuth login).
   `engine/core/data/upstox_rest.py` and `upstox_ws.py`. WebSocket runs two
   connections: 100 stocks in Full mode + ~20 indices in LTPC.
-- **Analytics token scope limitation (read-only).** The Analytics token can hit
-  the *live* market-data endpoints (`/v2/market-quote/ltp`, `/v3/feed/market-data-feed`)
-  but **cannot access historical-candle endpoints** — `/v2/historical-candle/...`
-  and `/v3/historical-candle/...` both return `400 UDAPI100011 "Invalid Instrument key"`
-  (a misleading error meaning the token lacks the marketdata scope, not that the key
-  is malformed). Consequence: the pre-market backfill and closed-phase bootstrap in
-  `engine/core/pipeline.py` cannot reconstruct yesterday's bars; live cycles only
-  populate data from 09:15 IST onward when the WS tick feed starts flowing. A
-  broader-scope OAuth token (Phase 2) is needed to backfill historical bars.
+- **Analytics token scope (verified 2026-05-21).** The Analytics token can access
+  both live market-data endpoints AND historical-candle endpoints:
+  - ✅ `GET /v2/historical-candle/{instrument_key}/{interval}/{date}` — works
+  - ✅ `GET /v3/market/ltpc` — works
+  - ✅ V3 WebSocket feed (Full + LTPC modes) — works
+  - ⚠️ `GET /v2/historical-candle/intraday/...` — broken URL format (extra `intraday/`
+    segment, missing date) — returns 200 with empty candles. Fixed 2026-05-21 in commit
+    `6f3247a` by correcting the URL to `/v2/historical-candle/{key}/{interval}/{date}`
+    with date defaulting to yesterday IST.
+  - ❌ Option Chain V2 (`/v2/option/chain`) — not yet tested
+  The pre-market backfill and closed-phase bootstrap pre-load real bars via the
+  corrected endpoint.
 - **TimescaleDB** (PostgreSQL 15 + Timescale extension) holds hypertables for
   `market_bars`, `thesis_outcomes`, and a continuous aggregate
   `edge_stats_daily`. Migrations are plain SQL in `engine/db/migrations/`.
