@@ -9,11 +9,15 @@ import type { ThesisCard, SymbolFactorBreakdown, Regime, MarketContextFrame } fr
 
 // ─── Helper to derive a ThesisCard from a SymbolFactorBreakdown ───
 
-function stockToThesisCard(stock: SymbolFactorBreakdown, ctx?: MarketContextFrame): ThesisCard {
+function stockToThesisCard(stock: Partial<SymbolFactorBreakdown>, ctx?: MarketContextFrame): ThesisCard | null {
+  // Guard: if critical nested data is missing (e.g., RankingEntry passed as stock),
+  // return null so the caller can fall back to API fetch
+  if (!stock.l8_thesis || !stock.l7_confluence) return null;
+
   return {
     thesis_id: stock.l8_thesis.thesis_id,
-    symbol: stock.symbol,
-    direction: stock.direction,
+    symbol: stock.symbol ?? '',
+    direction: stock.direction ?? 'LONG',
     setup_type: stock.l8_thesis.setup_type,
     trigger: stock.l8_thesis.trigger,
     invalidation: stock.l8_thesis.invalidation,
@@ -343,15 +347,17 @@ interface DetailPanelProps {
 // ─── Component ───
 
 export function DetailPanel({ symbol, stock: stockProp, ctx }: DetailPanelProps) {
-  // Always initialise the hook (it becomes a no-op when symbol is null/undefined)
-  const hookSymbol = stockProp ? null : (symbol ?? null);
+  // If stockProp has real factor data (has l8_thesis), use it directly.
+  // Otherwise fall through to API fetch via symbol.
+  const hasDirectFactorData = !!(stockProp?.l8_thesis);
+  const hookSymbol = hasDirectFactorData ? null : (symbol ?? null);
   const { data: apiData, isLoading } = useFactorBreakdown(hookSymbol);
   const source = useMarketStore((s) => s.sources['rankings/factors']);
 
   // ── Resolve data source ──
 
   const data = useMemo<SymbolFactorBreakdown | null | undefined>(() => {
-    if (stockProp) return stockProp;
+    if (hasDirectFactorData) return stockProp as SymbolFactorBreakdown;
     return apiData;
   }, [stockProp, apiData]);
 
@@ -363,12 +369,12 @@ export function DetailPanel({ symbol, stock: stockProp, ctx }: DetailPanelProps)
     return null;
   }, [stockProp, ctx, symbol]);
 
-  const price = stockProp ? (stockProp.price ?? (data?.l3_signals.vwap ?? 0) * 1.002) : (data ? (data.l3_signals.vwap ?? 0) * 1.002 : 0);
-  const changePct = stockProp ? (stockProp.change_pct ?? 0.85) : 0.85;
+  const price = stockProp?.price ?? (data?.l3_signals?.vwap ?? 0) * 1.002;
+  const changePct = stockProp?.change_pct ?? 0.85;
 
   // ── Loading state ──
 
-  if (!stockProp && isLoading) {
+  if (!hasDirectFactorData && isLoading) {
     return (
       <div className="flex flex-col rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-surface)]">
         <div className="h-12 animate-pulse border-b border-[var(--border-subtle)] bg-[var(--bg-surface-raised)]" />
