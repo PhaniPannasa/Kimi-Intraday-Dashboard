@@ -25,7 +25,7 @@ import { AlertToast } from '@/components/AlertToast';
 import { HealthStrip } from '@/components/HealthStrip';
 import { DataSourceDebugPanel } from '@/components/DataSourceDebugPanel';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
-import type { RankingEntry } from '@/types/api';
+import type { RankingEntry, SymbolFactorBreakdown } from '@/types/api';
 
 export default function App() {
   useWebSocket();
@@ -246,7 +246,7 @@ function DetailColumn({
         {inspectedLayer ? (
           <LayerInspector
             layerKey={inspectedLayer}
-            stocks={[...longRankings, ...shortRankings] as any}
+            stocks={[...longRankings, ...shortRankings] as unknown as SymbolFactorBreakdown[]}
             ctx={ctx}
             onClose={onCloseLayer}
             onSwitchLayer={onSwitchLayer}
@@ -256,9 +256,9 @@ function DetailColumn({
             }}
           />
         ) : viewMode === 'cards' ? (
-          <DetailPanel symbol={selected?.symbol ?? ''} stock={selected as any} ctx={ctx} />
+          <DetailPanel symbol={selected?.symbol ?? ''} ctx={ctx} />
         ) : selected ? (
-          <LayerJourney entry={selected as any} ctx={ctx} learnMode={learnMode} activeLayer={-1} />
+          <LayerJourney entry={selected as unknown as SymbolFactorBreakdown} ctx={ctx} learnMode={learnMode} activeLayer={-1} />
         ) : (
           <DetailPanel symbol="" />
         )}
