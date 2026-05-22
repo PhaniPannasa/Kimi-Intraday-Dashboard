@@ -1,8 +1,10 @@
 import { useFactorBreakdown } from '@/hooks/useFactorBreakdown';
-import { FactorGrid } from './FactorGrid';
+import { DetailPanel } from './DetailPanel';
+import { useMarketStore } from '@/stores/marketStore';
 
 export function RankingRowExpanded({ symbol }: { symbol: string }) {
   const { data, isLoading } = useFactorBreakdown(symbol);
+  const ctx = useMarketStore((s) => s.context);
 
   if (isLoading) {
     return (
@@ -20,5 +22,5 @@ export function RankingRowExpanded({ symbol }: { symbol: string }) {
     );
   }
 
-  return <FactorGrid data={data} />;
+  return <DetailPanel stock={data} ctx={ctx ?? undefined} />;
 }

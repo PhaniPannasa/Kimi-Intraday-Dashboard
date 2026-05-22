@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import { useMarketStore } from '@/stores/marketStore';
 import { useFactorBreakdown } from '@/hooks/useFactorBreakdown';
 import { MockBadge } from './MockBadge';
+import { CandleChart } from './CandleChart';
 import { setupTypeLabels } from '@/types/api';
 import type { ThesisCard, SymbolFactorBreakdown, Regime, MarketContextFrame } from '@/types/api';
 
@@ -471,7 +472,17 @@ export function DetailPanel({ symbol, stock: stockProp, ctx }: DetailPanelProps)
           {/* Levels chart */}
           {thesis && <LevelsChart thesis={thesis} price={price} vwap={data.l3_signals.vwap} />}
 
-          {/* Candle chart (only available via API candles endpoint — not in SymbolFactorBreakdown) */}
+          {/* Candle chart */}
+          {data.symbol && thesis && (
+            <CandleChart
+              symbol={data.symbol}
+              trigger={thesis.trigger}
+              invalidation={thesis.invalidation}
+              t1={thesis.t1}
+              t2={thesis.t2}
+              vwap={data.l3_signals?.vwap}
+            />
+          )}
 
           {/* L2 / L3 / L4 cards */}
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
