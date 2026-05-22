@@ -1,6 +1,8 @@
 import numpy as np
 import polars as pl
-from datetime import datetime, time
+from datetime import datetime, time, timezone, timedelta
+
+IST = timezone(timedelta(hours=5, minutes=30))
 from models.enums import Regime, VIXBand, Breadth
 from models.frames import MarketContextFrame
 
@@ -218,7 +220,7 @@ class L1MarketContext:
         if len(self.vix_history) > 90:
             self.vix_history = self.vix_history[-90:]
 
-        now = current_time or datetime.now().time()
+        now = current_time or datetime.now(IST).time()
         use_cold = should_use_cold_start(now)
 
         # Compute current 5-min bucket index (0-74) for diurnal vol baseline

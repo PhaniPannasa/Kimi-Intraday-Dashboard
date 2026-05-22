@@ -537,8 +537,7 @@ SECTOR_INDEX_MAP: dict[str, str] = {
 
 def _check_earnings_today(symbol: str, earnings_data: list) -> str:
     """Check if symbol has earnings announcement today."""
-    from datetime import date
-    today_str = date.today().isoformat()
+    today_str = datetime.now(IST).date().isoformat()
     for item in earnings_data or []:
         if item.get("symbol") == symbol and item.get("date") == today_str:
             return "Earnings"
